@@ -2,16 +2,18 @@ from PIL import Image, ImageDraw, ImageFont
 from matplotlib import font_manager
 import pdb
 
-people = {
+PEOPLE = {
     "p1": {
         "font": "fonts/Merriweather/Merriweather-Regular.ttf",
 	"font_bold": "fonts/Merriweather/Merriweather-Bold.ttf",
-	"font_italic": "fonts/Merriweather/Merriweather-Italic.ttf"
+	"font_italic": "fonts/Merriweather/Merriweather-Italic.ttf",
+        "font_bolditalic": "fonts/Merriweather/Merriweather-BoldItalic.ttf"
     },
     "p2": {
-        "font": "fonts/Playpen_Sans/PlaypenSans-Regular.ttf",
-	"font_bold": "fonts/Playpen_Sans/PlaypenSans-Bold.ttf",
-	"font_italic": "fonts/Playpen_Sans/PlaypenSans-Thin.ttf"
+        "font": "fonts/Chivo/Chivo-Regular.ttf",
+	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
+	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
+        "font_bolditalic": "fonts/Chivo/Chivo-BoldItalic.ttf"
     }
 }
 
@@ -39,6 +41,11 @@ class FmtUnit:
         self.font = font
         self.length = 0
 
+def loadFonts(people, height):
+    for person, fonts in people.items():
+        for font in fonts:
+            people[person][font] = ImageFont.truetype(people[person][font], height)
+
 def parse_text(text):
     font = "arial.ttf"
     style = ""
@@ -53,32 +60,27 @@ def parse_text(text):
             self.person = person
             self.startIndx = 0
 
+        def setFont(self):
+            if self.bold and self.italic:
+                self.font = PEOPLE[self.person]["font_bolditalic"]
+            elif self.bold:
+                self.font = PEOPLE[self.person]["font_bold"]
+            elif self.italic:
+                self.font = PEOPLE[self.person]["font_italic"]
+            else:
+                self.font = PEOPLE[self.person]["font"]
+
         def updatePerson(self, person):
             self.person = person
-            if self.bold and self.italic:
-                self.font = people[self.person]["font"] # Add bold+italic attr later
-            elif self.bold:
-                self.font = people[self.person]["font_bold"]
-            elif self.italic:
-                self.font = people[self.person]["font_italic"]
-            else:
-                self.font = people[self.person]["font"]
+            self.setFont()
 
         def toggleBold(self):
-            # Add bold + italic later
             self.bold = not self.bold
-            if self.bold:
-                self.font = people[self.person]["font_bold"]
-            else:
-                self.font = people[self.person]["font"]
+            self.setFont()
 
         def toggleItalic(self):
-            # Add bold + italic later
             self.italic = not self.italic
-            if self.italic:
-                self.font = people[self.person]["font_italic"]
-            else:
-                self.font = people[self.person]["font"]
+            self.setFont()
 
     def braceUpdate(state, indx, specialColl, text, regions):
         i = specialColl["["]["end_indices"].pop(0) + 1
@@ -151,7 +153,7 @@ def parse_text(text):
         assert lBrace < rBrace      # Prevents "]["
 
         person = text[lBrace+1:rBrace]
-        assert person in people
+        assert person in PEOPLE
         specialChars["["]["people"].append(person)
         prevRBrace = rBrace
 
@@ -201,35 +203,34 @@ def wrapRegions(fmtWords, width, height):
     formattedLines = []
     currLine = FormattedLine(0, [])
     print()
-    punctuation = set(".!,?")
+    punctuation = set(".!,?\"")
     for j, fmtWord in enumerate(fmtWords):
         if fmtWord.txt == "\n":
             formattedLines.append(currLine)
             currLine = FormattedLine(0, [])
             continue
 
-        font = ImageFont.truetype(fmtWord.font, height)
         if currLine.length == 0:
             currLine.fmtUnits.append(fmtWord)
-            fmtWord.length = font.getlength(fmtWord.txt)
+            fmtWord.length = fmtWord.font.getlength(fmtWord.txt)
             currLine.length = fmtWord.length
             continue
 
         isPunctuation = set(fmtWord.txt) <= punctuation
         newTxt = fmtWord.txt if isPunctuation else (" " + fmtWord.txt)
-        fmtWord.length = font.getlength(newTxt)
+        fmtWord.length = fmtWord.font.getlength(newTxt)
         newLen = fmtWord.length + currLine.length
         if newLen > width:
             if isPunctuation:
                 lastWord = currLine.fmtUnits.pop()
                 lastWord.txt = lastWord.txt.strip()
-                lastWord.length = ImageFont.truetype(lastWord.font, height).getlength(lastWord.txt)
+                lastWord.length = lastWord.font.getlength(lastWord.txt)
                 currLine.length -= lastWord.length
                 formattedLines.append(currLine)
                 currLine = FormattedLine(lastWord.length + fmtWord.length, [lastWord, fmtWord])
 
             else:
-                fmtWord.length = font.getlength(fmtWord.txt)
+                fmtWord.length = fmtWord.font.getlength(fmtWord.txt)
                 formattedLines.append(currLine)
                 currLine = FormattedLine(fmtWord.length, [fmtWord])
 
@@ -257,8 +258,7 @@ def writeText(fmtLines, textHeight, spacing):
         if center:
             x += int((maxLineLen - fmtLine.length)/2)
         for fmtUnit in fmtLine.fmtUnits:
-            font = ImageFont.truetype(fmtUnit.font, textHeight)
-            d.text((x, y), fmtUnit.txt, font=font, anchor="ls")
+            d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="ls")
             x += fmtUnit.length
         (x, y) = (pad, y + textHeight + spacing)
 
@@ -272,6 +272,7 @@ if __name__ == "__main__":
     with open("capfmt.txt","r") as f:
         text = f.read()
 
+    loadFonts(PEOPLE, textHeight)
     fmtWords = parse_text(text)
     fmtLines = wrapRegions(fmtWords, textWidth, textHeight)
     writeText(fmtLines, textHeight, spacing)
