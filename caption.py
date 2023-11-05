@@ -60,6 +60,20 @@ def parse_text(text):
             self.person = person
             self.startIndx = 0
 
+        def updateState(self, currChar, currIndx, specialColl, text, regions):
+            if currChar == "[":
+                self.updatePerson(specialColl["["], text)
+            elif currChar == "*":
+                self.toggleBold(currIndx)
+            elif currChar == "_":
+                self.toggleItalic(currIndx)
+            elif currChar == "\n":
+                self.updateNewline(regions, currIndx)
+            elif currChar == " ":
+                self.updateSpace(currIndx)
+            else:
+                assert False, f"`updateState()` called with invalid char '{currChar}'"
+
         def setFont(self):
             if self.bold and self.italic:
                 self.font = PEOPLE[self.person]["font_bolditalic"]
@@ -70,69 +84,45 @@ def parse_text(text):
             else:
                 self.font = PEOPLE[self.person]["font"]
 
-        def updatePerson(self, person):
-            self.person = person
+        def updatePerson(self, lBraceDict, text):
+            i = lBraceDict["end_indices"].pop(0) + 1
+            for char in text[i:]:
+                if char == " " or char == "\n":
+                    i += 1
+                else:
+                    break
+            self.startIndx = i
+            self.person = lBraceDict["people"].pop(0)
             self.setFont()
 
-        def toggleBold(self):
+        def toggleBold(self, currIndx):
+            self.startIndx = currIndx + 1
             self.bold = not self.bold
             self.setFont()
 
-        def toggleItalic(self):
+        def toggleItalic(self, currIndx):
+            self.startIndx = currIndx + 1
             self.italic = not self.italic
             self.setFont()
 
-    def braceUpdate(state, indx, specialColl, text, regions):
-        i = specialColl["["]["end_indices"].pop(0) + 1
-        for char in text[i:]:
-            if char == " " or char == "\n":
-                i += 1
-            else:
-                break
-        state.startIndx = i
-        state.updatePerson(specialColl["["]["people"].pop(0))
+        def updateNewline(self, regions, currIndx):
+            regions.append(FmtUnit("\n", self.font))
+            self.startIndx = currIndx + 1
 
-    def boldUpdate(state, indx, specialColl, text, regions):
-        state.startIndx = indx + 1
-        state.toggleBold()
-
-    def italicUpdate(state, indx, specialColl, text, regions):
-        state.startIndx = indx + 1
-        state.toggleItalic()
-
-    def newlineUpdate(state, indx, specialColl, text, regions):
-        regions.append(FmtUnit("\n", state.font))
-        state.startIndx = indx + 1
-
-    def spaceUpdate(state, indx, specialColl, text, regions):
-        state.startIndx = indx + 1
+        def updateSpace(self, currIndx):
+            self.startIndx = currIndx + 1
 
     specialChars = {
-        "[" : {
+        "["  : {
             "indices" : [],
             "end_indices": [],
             "people" : [],
-            "state_update" : braceUpdate
         },
-        "]" : {
-            "indices" : [],
-        },
-        "*" : {
-            "indices" : [],
-            "state_update" : boldUpdate
-        },
-        "_" : {
-            "indices" : [],
-            "state_update" : italicUpdate
-        },
-        "\n" : {
-            "indices" : [],
-            "state_update" : newlineUpdate
-        },
-        " " : {
-            "indices" : [],
-            "state_update" : spaceUpdate
-        }
+        "]"  : { "indices" : [] },
+        "*"  : { "indices" : [] },
+        "_"  : { "indices" : [] },
+        "\n" : { "indices" : [] },
+        " "  : { "indices" : [] }
     }
 
     lastCharSlash = False
@@ -183,8 +173,8 @@ def parse_text(text):
         if currRegionText != "":
             regions.append(FmtUnit(currRegionText, fmtState.font))
 
-        specialChars[nxtSpecialChar]["state_update"](
-            fmtState, endIndx, specialChars, text, regions)
+        fmtState.updateState(
+            nxtSpecialChar, endIndx, specialChars, text, regions)
 
     currRegionText = text[fmtState.startIndx:]
     if currRegionText != "":
