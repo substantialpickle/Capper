@@ -232,15 +232,24 @@ def wrapRegions(fmtWords, width, height):
 
     return formattedLines
 
-def writeText(fmtLines, textHeight, spacing):
-    center = True
-    pad = int(textHeight * 0.5)
+def getTextInfo(fmtLines, lineHeight, spacing=None):
+    spacing = int(lineHeight * 0.34) if spacing is None else spacing
+    pad = int(lineHeight * 0.5)
     maxLineLen = max([line.length for line in fmtLines])
-    imgWidth = maxLineLen + (pad * 2)
-    imgHeight = (textHeight + spacing) * len(fmtLines) + (pad * 2)
-
     ceil = lambda i : int(i) if int(i) == i else int(i + 1)
-    img = Image.new("RGB", (ceil(imgWidth), ceil(imgHeight)), "grey")
+    textImgWidth = ceil(maxLineLen + (pad * 2))
+    textImgHeight = ceil((lineHeight + spacing) * len(fmtLines) + (pad * 2))
+    return (pad, maxLineLen, textImgWidth, textImgHeight, spacing)
+
+def getTextImgWidthHeight(fmtLines, lineHeight, spacing=None):
+    (_, _, textImgWidth, textImgHeight, _) = getTextInfo(fmtLines, lineHeight, spacing=None)
+    return (textImgWidth, textImgHeight)
+
+def writeText(fmtLines, textHeight):
+    (pad, maxLineLen, textImgWidth, textImgHeight, spacing) = getTextInfo(fmtLines, lineHeight)
+    center = True
+
+    img = Image.new("RGB", (textImgWidth, textImgHeight), "grey")
     d = ImageDraw.Draw(img)
 
     (x, y) = (pad, (textHeight + pad) - int(0.12 * textHeight))
@@ -255,14 +264,49 @@ def writeText(fmtLines, textHeight, spacing):
     img.save("real.png")
     return
 
+def autoWidth(textHeight=24):
+    # TODO: Determine optimal text width/height ratio based on heuristics that look
+    # at character count.
+    optimalWidthHeightRatio = 40
+    textWidth = textHeight * optimalWidthHeightRatio
+    return textWidth
+
+def autoRescale(fmtLines, textImgHeight, lineHeight, art, imgHeight=None):
+    if imgHeight is None:
+        # TODO: Add some "sane" scaling. If there's not a lot of text, don't make it
+        # giant. If the image is giant, scale it down.
+        imgHeight = textImageHeight if textImgHeight > art.height else art.height
+
+    scale = imgHeight / textImgHeight
+    lineHeight = int(lineHeight * scale)
+
+    currFonts = {fmtUnit.font:None for fmtLine in fmtLines for fmtUnit in fmtLine.fmtUnits}
+    for font in currFonts:
+        currFonts[font] = font.font_variant(size=lineHeight)
+
+    for fmtLine in fmtLines:
+        fmtLine.length *= scale
+        for fmtUnit in fmtLine.fmtUnits:
+            fmtUnit.font = currFonts[fmtUnit.font]
+            fmtUnit.length *= scale
+
+    artScale = imgHeight / art.height
+    resizedArt = art.resize((int(art.width * artScale), int(art.height * artScale)))
+    return lineHeight, resizedArt
+
 if __name__ == "__main__":
-    textWidth = 1000
-    textHeight = 24
-    spacing = int(textHeight * 0.34)
+    lineHeight = 24
+    textWidth = autoWidth(lineHeight)
     with open("capfmt.txt","r") as f:
         text = f.read()
 
-    loadFonts(PEOPLE, textHeight)
+    loadFonts(PEOPLE, lineHeight)
     fmtWords = parse_text(text)
-    fmtLines = wrapRegions(fmtWords, textWidth, textHeight)
-    writeText(fmtLines, textHeight, spacing)
+    fmtLines = wrapRegions(fmtWords, textWidth, lineHeight)
+
+    art = Image.open("7625657.png")
+    (_, textImgHeight) = getTextImgWidthHeight(fmtLines, lineHeight)
+
+    # NOTE: textWidth gets outdated here
+    (lineHeight, art) = autoRescale(fmtLines, textImgHeight, lineHeight, art)
+    writeText(fmtLines, lineHeight)
