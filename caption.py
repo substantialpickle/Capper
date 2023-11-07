@@ -17,6 +17,8 @@ PEOPLE = {
     }
 }
 
+ceil = lambda i : int(i) if int(i) == i else int(i + 1)
+
 # Debug printers
 def printFormatUnits(regions):
     for i, region in enumerate(regions):
@@ -231,99 +233,111 @@ def wrapRegions(fmtWords, width, height):
 
     return formattedLines
 
-def getTextInfo(fmtLines, lineHeight, spacing=None):
-    spacing = int(lineHeight * 0.34) if spacing is None else spacing
-    pad = lineHeight
-    maxLineLen = max([line.length for line in fmtLines])
-    ceil = lambda i : int(i) if int(i) == i else int(i + 1)
-    textImgWidth = ceil(maxLineLen + (pad * 2))
-    textImgHeight = ceil((lineHeight + spacing) * len(fmtLines) + (pad * 2))
-    return (pad, maxLineLen, textImgWidth, textImgHeight, spacing)
+class TextBox:
+    class Align:
+        LEFT = 0
+        RIGHT = 1
+        CENTER = 2
 
-def getTextImgDimensions(fmtLines, lineHeight, spacing=None):
-    (_, _, textImgWidth, textImgHeight, _) = getTextInfo(fmtLines, lineHeight, spacing=None)
-    return (textImgWidth, textImgHeight)
+    def __init__(self, fmtLines, lineHeight, lineSpacing=None, padding=None):
+        self.fmtLines = fmtLines
+        self.lineHeight = lineHeight
+        self.lineSpacing = int(lineHeight * 0.34) if lineSpacing is None else lineSpacing
+        self.padding = lineHeight if padding is None else padding
+        self.maxLineLen = max([line.length for line in fmtLines])
+        self.computeDimensions()
 
-def writeText(img, fmtLines, lineHeight, startX=0, startY=0):
-    (pad, maxLineLen, textImgWidth, textImgHeight, spacing) = getTextInfo(fmtLines, lineHeight)
-    center = True
-    d = ImageDraw.Draw(img)
+    def computeDimensions(self):
+        self.width = ceil(self.maxLineLen + (self.padding * 2))
+        self.height = ceil((self.lineHeight + self.lineSpacing) *
+                           len(self.fmtLines) + (self.padding * 2))
 
-    (x, y) = (startX + pad, startY + (lineHeight + pad) - int(0.12 * lineHeight))
-    for fmtLine in fmtLines:
-        if center:
-            x += int((maxLineLen - fmtLine.length)/2)
-        for fmtUnit in fmtLine.fmtUnits:
-            d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="ls")
-            x += fmtUnit.length
-        (x, y) = (startX + pad, y + lineHeight + spacing)
+    def rescale(self, scale):
+        self.lineHeight = int(self.lineHeight * scale)
+        self.lineSpacing = int(self.lineSpacing * scale)
+        self.padding = int(self.padding * scale)
+        self.maxLineLen = int(self.maxLineLen * scale)
+        self.computeDimensions()
+
+        currFonts = {fmtUnit.font:None for fmtLine in self.fmtLines \
+                     for fmtUnit in fmtLine.fmtUnits}
+
+        for font in currFonts:
+            currFonts[font] = font.font_variant(size=self.lineHeight)
+
+        for fmtLine in self.fmtLines:
+            fmtLine.length *= scale
+            for fmtUnit in fmtLine.fmtUnits:
+                fmtUnit.font = currFonts[fmtUnit.font]
+                fmtUnit.length *= scale
+
+    def drawText(self, img, alignment, startX=0, startY=0):
+        d = ImageDraw.Draw(img)
+        (x, y) = (startX + self.padding,
+                  startY + (self.lineHeight + self.padding) - int(0.12 * self.lineHeight))
+        for fmtLine in self.fmtLines:
+            if alignment == self.Align.CENTER:
+                x += int((self.maxLineLen - fmtLine.length)/2)
+            elif alignment == self.Align.RIGHT:
+                x += int(self.maxLineLen - fmtLine.length)
+
+            for fmtUnit in fmtLine.fmtUnits:
+                d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="ls")
+                x += fmtUnit.length
+            (x, y) = (startX + self.padding, y + self.lineHeight + self.lineSpacing)
 
 def autoWidth(textHeight=24):
-    # TODO: Determine optimal text width/height ratio based on heuristics that look
+    # TODO: Determine optimal text width/height ratio based on heuristics that looks
     # at character count.
     optimalWidthHeightRatio = 40
     textWidth = textHeight * optimalWidthHeightRatio
     return textWidth
 
-def autoRescale(fmtLines, textImgHeight, lineHeight, art, imgHeight=None):
+def autoRescale(textBox, art, imgHeight=None):
     if imgHeight is None:
         # TODO: Add some "sane" scaling. If there's not a lot of text, don't make it
         # giant. If the image is giant, scale it down.
-        imgHeight = textImgHeight if textImgHeight > art.height else art.height
+        imgHeight = textBox.height if textBox.height > art.height else art.height
 
-    scale = imgHeight / textImgHeight
-    lineHeight = int(lineHeight * scale)
-
-    currFonts = {fmtUnit.font:None for fmtLine in fmtLines for fmtUnit in fmtLine.fmtUnits}
-    for font in currFonts:
-        currFonts[font] = font.font_variant(size=lineHeight)
-
-    for fmtLine in fmtLines:
-        fmtLine.length *= scale
-        for fmtUnit in fmtLine.fmtUnits:
-            fmtUnit.font = currFonts[fmtUnit.font]
-            fmtUnit.length *= scale
-
+    textBox.rescale(imgHeight/textBox.height)
     artScale = imgHeight / art.height
     resizedArt = art.resize((int(art.width * artScale), int(art.height * artScale)))
-    return lineHeight, resizedArt
+    return resizedArt
 
 class TextBoxPos:
     L = 0
     R = 1
 
-def generateCaption(fmtLines, lineHeight, art, fileName, textBoxPos):
-    (textImgWidth, textImgHeight) = getTextImgDimensions(fmtLines, lineHeight)
-    img = Image.new("RGB", (art.width + textImgWidth, art.height), "grey")
+def generateCaption(textBox, art, fileName, textBoxPos):
+    img = Image.new("RGB", (art.width + textBox.width, art.height), "grey")
 
     if textBoxPos == TextBoxPos.L:
-        img.paste(art, (textImgWidth, 0))
-        writeText(img, fmtLines, lineHeight, startX=0,
-                  startY=int((art.height - textImgHeight)/2))
+        img.paste(art, (textBox.width, 0))
+        textBox.drawText(img, TextBox.Align.CENTER, startX=0,
+                         startY=int((art.height - textBox.height)/2))
     elif textBoxPos == TextBoxPos.R:
         img.paste(art, (0, 0))
-        writeText(img, fmtLines, lineHeight, startX=art.width,
-                  startY=int((art.height - textImgHeight)/2))
+        textBox.drawText(img, TextBox.Align.CENTER, startX=art.width,
+                         startY=int((art.height - textBox.height)/2))
 
     img.save(fileName)
 
 def main():
-    lineHeight = 24
-    textWidth = autoWidth(lineHeight)
+    baseLineHeight = 24
+    baseTextWidth = autoWidth(baseLineHeight)
     with open("capFmt.txt","r") as f:
         text = f.read()
 
-    loadFonts(PEOPLE, lineHeight)
+    loadFonts(PEOPLE, baseLineHeight)
     fmtWords = parse_text(text)
-    fmtLines = wrapRegions(fmtWords, textWidth, lineHeight)
+    textBox = TextBox(wrapRegions(fmtWords, baseTextWidth, baseLineHeight),
+                      baseLineHeight)
 
     art = Image.open("9104645.jpg")
-    (_, textImgHeight) = getTextImgDimensions(fmtLines, lineHeight)
 
     # NOTE: textWidth gets outdated here
-    (lineHeight, art) = autoRescale(fmtLines, textImgHeight, lineHeight, art)
-    # writeText(fmtLines, lineHeight)
-    generateCaption(fmtLines, lineHeight, art, "caption.png", TextBoxPos.R)
+    art = autoRescale(textBox, art)
+    generateCaption(textBox, art, "caption.png", TextBoxPos.L)
 
 if __name__ == "__main__":
     main()
