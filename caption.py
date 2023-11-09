@@ -41,7 +41,8 @@ class FmtUnit:
     def __init__(self, txt, font):
         self.txt = txt
         self.font = font
-        self.length = 0
+        self.actualLength = font.getlength(txt)
+        self.renderLength = self.actualLength
 
 def loadFonts(people, height):
     for person, fonts in people.items():
@@ -157,7 +158,7 @@ def parse_text(text):
     regions = []
     fmtState = FmtState("arial.ttf", False, False, "p1")
     while True:
-        endIndx = 10000000 # do int max or something
+        endIndx = float('inf')
         empty = 0
         for char in specialChars:
             if not specialChars[char]["indices"]:
@@ -203,31 +204,30 @@ def wrapRegions(fmtWords, width, height):
 
         if currLine.length == 0:
             currLine.fmtUnits.append(fmtWord)
-            fmtWord.length = fmtWord.font.getlength(fmtWord.txt)
-            currLine.length = fmtWord.length
+            currLine.length = fmtWord.renderLength
             continue
 
         isPunctuation = set(fmtWord.txt) <= punctuation
-        newTxt = fmtWord.txt if isPunctuation else (" " + fmtWord.txt)
-        fmtWord.length = fmtWord.font.getlength(newTxt)
-        newLen = fmtWord.length + currLine.length
+        if not isPunctuation:
+            # TODO: Should precompute the length of a space for every font.
+            fmtWord.renderLength += fmtWord.font.getlength(" ")
+        newLen = fmtWord.renderLength + currLine.length
         if newLen > width:
             if isPunctuation:
                 lastWord = currLine.fmtUnits.pop()
-                lastWord.txt = lastWord.txt.strip()
-                lastWord.length = lastWord.font.getlength(lastWord.txt)
-                currLine.length -= lastWord.length
+                currLine.length -= lastWord.renderLength
+                lastWord.renderLength = lastWord.actualLength
                 formattedLines.append(currLine)
-                currLine = FormattedLine(lastWord.length + fmtWord.length, [lastWord, fmtWord])
+                currLine = FormattedLine(lastWord.renderLength + fmtWord.renderLength,
+                                         [lastWord, fmtWord])
 
             else:
-                fmtWord.length = fmtWord.font.getlength(fmtWord.txt)
                 formattedLines.append(currLine)
-                currLine = FormattedLine(fmtWord.length, [fmtWord])
+                fmtWord.renderLength = fmtWord.actualLength
+                currLine = FormattedLine(fmtWord.renderLength, [fmtWord])
 
             continue
 
-        fmtWord.txt = newTxt
         currLine.fmtUnits.append(fmtWord)
         currLine.length = newLen
 
@@ -269,7 +269,8 @@ class TextBox:
             fmtLine.length *= scale
             for fmtUnit in fmtLine.fmtUnits:
                 fmtUnit.font = currFonts[fmtUnit.font]
-                fmtUnit.length *= scale
+                fmtUnit.actualLength *= scale
+                fmtUnit.renderLength *= scale
 
     def drawText(self, img, alignment, startX=0, startY=0):
         d = ImageDraw.Draw(img)
@@ -282,8 +283,8 @@ class TextBox:
                 x += int(self.maxLineLen - fmtLine.length)
 
             for fmtUnit in fmtLine.fmtUnits:
-                d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="ls")
-                x += fmtUnit.length
+                x += fmtUnit.renderLength
+                d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="rs")
             (x, y) = (startX + self.padding, y + self.lineHeight + self.lineSpacing)
 
 def autoWidth(textHeight=24):
