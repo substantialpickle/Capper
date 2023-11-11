@@ -4,12 +4,21 @@ import pdb
 
 PEOPLE = {
     "p1": {
+        "relative_height" : 1,
         "font": "fonts/Merriweather/Merriweather-Regular.ttf",
 	"font_bold": "fonts/Merriweather/Merriweather-Bold.ttf",
 	"font_italic": "fonts/Merriweather/Merriweather-Italic.ttf",
         "font_bolditalic": "fonts/Merriweather/Merriweather-BoldItalic.ttf"
     },
     "p2": {
+        "relative_height" : 1.5,
+        "font": "fonts/Chivo/Chivo-Regular.ttf",
+	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
+	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
+        "font_bolditalic": "fonts/Chivo/Chivo-BoldItalic.ttf"
+    },
+    "p3": {
+        "relative_height" : 2,
         "font": "fonts/Chivo/Chivo-Regular.ttf",
 	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
 	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
@@ -23,7 +32,7 @@ ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 def printFormatUnits(regions):
     for i, region in enumerate(regions):
         fmtStr = region.txt.replace("\n", "\\n")
-        print(f"{i:03d} : {fmtStr}")
+        print(f"i: {i:03d} | height: {region.height} | {fmtStr}")
 
 def printFormattedLines(fmtLines):
     for i, line in enumerate(fmtLines):
@@ -38,16 +47,20 @@ def printFormattedLines(fmtLines):
         print()
 
 class FmtUnit:
-    def __init__(self, txt, font):
+    def __init__(self, txt, fmtState):
         self.txt = txt
-        self.font = font
-        self.actualLength = font.getlength(txt)
+        self.font = fmtState.font
+        self.height = PEOPLE[fmtState.person]['height']
+        self.actualLength = self.font.getlength(txt)
         self.renderLength = self.actualLength
 
-def loadFonts(people, height):
+def loadFonts(people, baseHeight):
     for person, fonts in people.items():
-        for font in fonts:
-            people[person][font] = ImageFont.truetype(people[person][font], height)
+        people[person]['height'] = \
+            int(baseHeight * people[person]['relative_height'])
+        for font in ["font", "font_bold", "font_italic", "font_bolditalic"]:
+            people[person][font] = ImageFont.truetype(
+                people[person][font], people[person]['height'])
 
 def parse_text(text):
     font = "arial.ttf"
@@ -56,7 +69,7 @@ def parse_text(text):
     units = []
 
     class FmtState:
-        def __init__(self, font, bold, italic, person ):
+        def __init__(self, font, bold, italic, person):
             self.font = font
             self.bold = bold
             self.italic = italic
@@ -109,7 +122,7 @@ def parse_text(text):
             self.setFont()
 
         def updateNewline(self, regions, currIndx):
-            regions.append(FmtUnit("\n", self.font))
+            regions.append(FmtUnit("\n", self))
             self.startIndx = currIndx + 1
 
         def updateSpace(self, currIndx):
@@ -137,7 +150,8 @@ def parse_text(text):
             lastCharSlash = (char == "\\")
 
     # Assert that people specifers are valid and collect people
-    bracePairs = [pair for pair in zip(specialChars["["]["indices"], specialChars["]"]["indices"])]
+    bracePairs = [pair for pair in zip(specialChars["["]["indices"],
+                                       specialChars["]"]["indices"])]
     assert len(bracePairs) == len(specialChars["["]["indices"])  # Prevents "[]["
     assert len(bracePairs) == len(specialChars["]"]["indices"])  # Prevents "[]]"
     prevRBrace = -1
@@ -174,32 +188,33 @@ def parse_text(text):
 
         currRegionText = text[fmtState.startIndx : endIndx]
         if currRegionText != "":
-            regions.append(FmtUnit(currRegionText, fmtState.font))
+            regions.append(FmtUnit(currRegionText, fmtState))
 
         fmtState.updateState(
             nxtSpecialChar, endIndx, specialChars, text, regions)
 
     currRegionText = text[fmtState.startIndx:]
     if currRegionText != "":
-        regions.append(FmtUnit(currRegionText, fmtState.font))
+        regions.append(FmtUnit(currRegionText, fmtState))
 
     return regions
 
 class FormattedLine:
-    def __init__(self, length, fmtUnits):
+    def __init__(self, length, fmtUnits, maxHeight=0):
         self.length = length
         self.fmtUnits = fmtUnits
+        self.maxHeight = maxHeight
 
-def wrapRegions(fmtWords, width, height):
+def wrapRegions(fmtWords, width):
     # TODO: Error if we're building a new line, and it's impossible to fit it into the current
     # line length
     formattedLines = []
     currLine = FormattedLine(0, [])
     punctuation = set(".!,?\"")
-    for j, fmtWord in enumerate(fmtWords):
+    for i, fmtWord in enumerate(fmtWords):
         if fmtWord.txt == "\n":
             formattedLines.append(currLine)
-            currLine = FormattedLine(0, [])
+            currLine = FormattedLine(0, [], fmtWord.height)
             continue
 
         if currLine.length == 0:
@@ -210,7 +225,9 @@ def wrapRegions(fmtWords, width, height):
         isPunctuation = set(fmtWord.txt) <= punctuation
         if not isPunctuation:
             # TODO: Should precompute the length of a space for every font.
-            fmtWord.renderLength += fmtWord.font.getlength(" ")
+            prevUnitSpaceLen = fmtWords[i-1].font.getlength(" ")
+            currUnitSpaceLen = fmtWord.font.getlength(" ")
+            fmtWord.renderLength += max(prevUnitSpaceLen, currUnitSpaceLen)
         newLen = fmtWord.renderLength + currLine.length
         if newLen > width:
             if isPunctuation:
@@ -231,6 +248,14 @@ def wrapRegions(fmtWords, width, height):
         currLine.fmtUnits.append(fmtWord)
         currLine.length = newLen
 
+
+    for line in formattedLines:
+        if len(line.fmtUnits) > 0:
+            line.maxHeight = 0
+        for unit in line.fmtUnits:
+            if unit.height > line.maxHeight:
+                line.maxHeight = unit.height
+
     return formattedLines
 
 class TextBox:
@@ -239,44 +264,58 @@ class TextBox:
         RIGHT = 1
         CENTER = 2
 
-    def __init__(self, fmtLines, lineHeight, lineSpacing=None, padding=None):
+    def __init__(self, fmtLines, baseHeight, lineSpacing=None, padding=None):
         self.fmtLines = fmtLines
-        self.lineHeight = lineHeight
-        self.lineSpacing = int(lineHeight * 0.34) if lineSpacing is None else lineSpacing
-        self.padding = lineHeight if padding is None else padding
         self.maxLineLen = max([line.length for line in fmtLines])
+
+        # TODO: Make default spacing and padding relative to the "base" font height rather than
+        # the first font.
+        self.baseHeight = baseHeight
+        self.lineSpacing = int(baseHeight * 0.34) if lineSpacing is None else lineSpacing
+        self.padding = baseHeight if padding is None else padding
+
+        self.averageFontHeight = int(sum([line.maxHeight for line in fmtLines])/len(fmtLines))
+
         self.computeDimensions()
 
     def computeDimensions(self):
         self.width = ceil(self.maxLineLen + (self.padding * 2))
-        self.height = ceil((self.lineHeight + self.lineSpacing) *
-                           len(self.fmtLines) + (self.padding * 2))
+
+        self.height = self.padding * 2
+        for line in self.fmtLines:
+            self.height += self.lineSpacing + line.maxHeight
 
     def rescale(self, scale):
-        self.lineHeight = int(self.lineHeight * scale)
-        self.lineSpacing = int(self.lineSpacing * scale)
-        self.padding = int(self.padding * scale)
-        self.maxLineLen = int(self.maxLineLen * scale)
-        self.computeDimensions()
-
-        currFonts = {fmtUnit.font:None for fmtLine in self.fmtLines \
-                     for fmtUnit in fmtLine.fmtUnits}
-
-        for font in currFonts:
-            currFonts[font] = font.font_variant(size=self.lineHeight)
-
+        newFontDict = {}
         for fmtLine in self.fmtLines:
             fmtLine.length *= scale
+            fmtLine.maxHeight = int(fmtLine.maxHeight * scale)
             for fmtUnit in fmtLine.fmtUnits:
-                fmtUnit.font = currFonts[fmtUnit.font]
                 fmtUnit.actualLength *= scale
                 fmtUnit.renderLength *= scale
 
+                fmtUnit.height = int(fmtUnit.height * scale)
+                if fmtUnit.font not in newFontDict:
+                    newFontDict[fmtUnit.font] = \
+                        fmtUnit.font.font_variant(size=fmtUnit.height)
+                fmtUnit.font = newFontDict[fmtUnit.font]
+
+        self.maxLineLen = int(self.maxLineLen * scale)
+        self.baseHeight = int(self.baseHeight * scale)
+        self.lineSpacing = int(self.lineSpacing * scale)
+        self.padding = int(self.padding * scale)
+        self.computeDimensions()
+
+        self.averageFontHeight = \
+            int(sum([line.maxHeight for line in self.fmtLines])/len(self.fmtLines))
+
     def drawText(self, img, alignment, startX=0, startY=0):
         d = ImageDraw.Draw(img)
+
         (x, y) = (startX + self.padding,
-                  startY + (self.lineHeight + self.padding) - int(0.12 * self.lineHeight))
+                  startY + self.padding - int(0.2 * self.averageFontHeight))
         for fmtLine in self.fmtLines:
+            y += fmtLine.maxHeight
             if alignment == self.Align.CENTER:
                 x += int((self.maxLineLen - fmtLine.length)/2)
             elif alignment == self.Align.RIGHT:
@@ -285,9 +324,9 @@ class TextBox:
             for fmtUnit in fmtLine.fmtUnits:
                 x += fmtUnit.renderLength
                 d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="rs")
-            (x, y) = (startX + self.padding, y + self.lineHeight + self.lineSpacing)
+            (x, y) = (startX + self.padding, y + self.lineSpacing)
 
-def autoWidth(textHeight=24):
+def autoWidth(textHeight):
     # TODO: Determine optimal text width/height ratio based on heuristics that looks
     # at character count.
     optimalWidthHeightRatio = 40
@@ -324,15 +363,14 @@ def generateCaption(textBox, art, fileName, textBoxPos):
     img.save(fileName)
 
 def main():
-    baseLineHeight = 24
-    baseTextWidth = autoWidth(baseLineHeight)
+    baseHeight = 24
+    baseTextWidth = autoWidth(baseHeight)
     with open("capFmt.txt","r") as f:
         text = f.read()
 
-    loadFonts(PEOPLE, baseLineHeight)
+    loadFonts(PEOPLE, baseHeight)
     fmtWords = parse_text(text)
-    textBox = TextBox(wrapRegions(fmtWords, baseTextWidth, baseLineHeight),
-                      baseLineHeight)
+    textBox = TextBox(wrapRegions(fmtWords, baseTextWidth), baseHeight)
 
     art = Image.open("9104645.jpg")
 
