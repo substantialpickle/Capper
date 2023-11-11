@@ -1,17 +1,21 @@
-from PIL import Image, ImageDraw, ImageFont
-from matplotlib import font_manager
 import pdb
+import re
+
+from matplotlib import font_manager
+from PIL import Image, ImageDraw, ImageFont
 
 PEOPLE = {
-    "p1": {
+    "p2": {
         "relative_height" : 1,
+        "color" : "#e2c9cc",
         "font": "fonts/Merriweather/Merriweather-Regular.ttf",
 	"font_bold": "fonts/Merriweather/Merriweather-Bold.ttf",
 	"font_italic": "fonts/Merriweather/Merriweather-Italic.ttf",
         "font_bolditalic": "fonts/Merriweather/Merriweather-BoldItalic.ttf"
     },
-    "p2": {
+    "p1": {
         "relative_height" : 1.5,
+        "color" : "#e4b59a",
         "font": "fonts/Chivo/Chivo-Regular.ttf",
 	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
 	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
@@ -19,6 +23,7 @@ PEOPLE = {
     },
     "p3": {
         "relative_height" : 2,
+        "color" : "#ffffff",
         "font": "fonts/Chivo/Chivo-Regular.ttf",
 	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
 	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
@@ -46,12 +51,35 @@ def printFormattedLines(fmtLines):
             print(fmtStr, end="")
         print()
 
+class Font:
+    pattern = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])",
+                         re.IGNORECASE)
+
+    def __init__(self, path, height, color):
+        self.font = ImageFont.truetype(path, height)
+        self.height = height
+        self.spaceLen = self.font.getlength(" ")
+        matches = self.pattern.fullmatch(color)
+        self.rgb = (int(matches[1], 16), int(matches[2], 16), int(matches[3], 16))
+
+    def getLength(self, text):
+        return self.font.getlength(text)
+
+    def rescale(self, scale):
+        self.height = int(self.height * scale)
+        self.font = self.font.font_variant(size=self.height)
+
+    def imgDrawKwargs(self):
+        return {
+            "font" : self.font,
+            "fill" : self.rgb,
+        }
+
 class FmtUnit:
     def __init__(self, txt, fmtState):
         self.txt = txt
         self.font = fmtState.font
-        self.height = PEOPLE[fmtState.person]['height']
-        self.actualLength = self.font.getlength(txt)
+        self.actualLength = self.font.getLength(txt)
         self.renderLength = self.actualLength
 
 def loadFonts(people, baseHeight):
@@ -59,8 +87,8 @@ def loadFonts(people, baseHeight):
         people[person]['height'] = \
             int(baseHeight * people[person]['relative_height'])
         for font in ["font", "font_bold", "font_italic", "font_bolditalic"]:
-            people[person][font] = ImageFont.truetype(
-                people[person][font], people[person]['height'])
+            people[person][font] = Font(
+                people[person][font], people[person]['height'], people[person]['color'])
 
 def parse_text(text):
     font = "arial.ttf"
@@ -214,7 +242,7 @@ def wrapRegions(fmtWords, width):
     for i, fmtWord in enumerate(fmtWords):
         if fmtWord.txt == "\n":
             formattedLines.append(currLine)
-            currLine = FormattedLine(0, [], fmtWord.height)
+            currLine = FormattedLine(0, [], fmtWord.font.height)
             continue
 
         if currLine.length == 0:
@@ -224,9 +252,8 @@ def wrapRegions(fmtWords, width):
 
         isPunctuation = set(fmtWord.txt) <= punctuation
         if not isPunctuation:
-            # TODO: Should precompute the length of a space for every font.
-            prevUnitSpaceLen = fmtWords[i-1].font.getlength(" ")
-            currUnitSpaceLen = fmtWord.font.getlength(" ")
+            prevUnitSpaceLen = fmtWords[i-1].font.spaceLen
+            currUnitSpaceLen = fmtWord.font.spaceLen
             fmtWord.renderLength += max(prevUnitSpaceLen, currUnitSpaceLen)
         newLen = fmtWord.renderLength + currLine.length
         if newLen > width:
@@ -253,8 +280,8 @@ def wrapRegions(fmtWords, width):
         if len(line.fmtUnits) > 0:
             line.maxHeight = 0
         for unit in line.fmtUnits:
-            if unit.height > line.maxHeight:
-                line.maxHeight = unit.height
+            if unit.font.height > line.maxHeight:
+                line.maxHeight = unit.font.height
 
     return formattedLines
 
@@ -287,18 +314,20 @@ class TextBox:
 
     def rescale(self, scale):
         newFontDict = {}
+
+        fontTypes = ["font", "font_bold", "font_italic", "font_bolditalic"]
+        for person, configs in PEOPLE.items():
+            fonts = {fontName:font for (fontName, font) in configs.items()
+                     if fontName in fontTypes}
+            for font in fonts.values():
+                font.rescale(scale)
+
         for fmtLine in self.fmtLines:
             fmtLine.length *= scale
             fmtLine.maxHeight = int(fmtLine.maxHeight * scale)
             for fmtUnit in fmtLine.fmtUnits:
                 fmtUnit.actualLength *= scale
                 fmtUnit.renderLength *= scale
-
-                fmtUnit.height = int(fmtUnit.height * scale)
-                if fmtUnit.font not in newFontDict:
-                    newFontDict[fmtUnit.font] = \
-                        fmtUnit.font.font_variant(size=fmtUnit.height)
-                fmtUnit.font = newFontDict[fmtUnit.font]
 
         self.maxLineLen = int(self.maxLineLen * scale)
         self.baseHeight = int(self.baseHeight * scale)
@@ -323,7 +352,7 @@ class TextBox:
 
             for fmtUnit in fmtLine.fmtUnits:
                 x += fmtUnit.renderLength
-                d.text((x, y), fmtUnit.txt, font=fmtUnit.font, anchor="rs")
+                d.text((x, y), fmtUnit.txt, anchor="rs", **fmtUnit.font.imgDrawKwargs())
             (x, y) = (startX + self.padding, y + self.lineSpacing)
 
 def autoWidth(textHeight):
@@ -349,7 +378,7 @@ class TextBoxPos:
     R = 1
 
 def generateCaption(textBox, art, fileName, textBoxPos):
-    img = Image.new("RGB", (art.width + textBox.width, art.height), "grey")
+    img = Image.new("RGB", (art.width + textBox.width, art.height), (35, 34, 52))
 
     if textBoxPos == TextBoxPos.L:
         img.paste(art, (textBox.width, 0))
@@ -365,7 +394,7 @@ def generateCaption(textBox, art, fileName, textBoxPos):
 def main():
     baseHeight = 24
     baseTextWidth = autoWidth(baseHeight)
-    with open("capFmt.txt","r") as f:
+    with open("capfmt.txt","r") as f:
         text = f.read()
 
     loadFonts(PEOPLE, baseHeight)
