@@ -1,7 +1,6 @@
 import pdb
 import re
 
-from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
 
 PEOPLE = {
@@ -277,6 +276,7 @@ def parse_text(text):
     currRegionText = text[fmtState.startIndx:]
     if currRegionText != "":
         fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState))
+        fmtState.fmtWords.append(FmtWord(fmtState.fmtUnits))
 
     return fmtState.fmtWords
 
@@ -296,6 +296,9 @@ class FormattedLine:
         for word in self.fmtWords:
             x += word.renderLength
             word.drawWord(d, x, y)
+
+    def isNewline(self):
+        return not self.fmtWords
 
 def wrapRegions(fmtWords, width):
     # TODO: Error if we're building a new line, and it's impossible to fit it into the current
@@ -327,6 +330,9 @@ def wrapRegions(fmtWords, width):
         currLine.fmtWords.append(fmtWord)
         currLine.length = newLen
 
+    if currLine.fmtWords:
+        formattedLines.append(currLine)
+
     for line in formattedLines:
         if not line.fmtWords:
             continue
@@ -342,15 +348,16 @@ class TextBox:
 
     def __init__(self, fmtLines, baseHeight, lineSpacing=None, padding=None):
         self.fmtLines = fmtLines
-        self.maxLineLen = max([line.length for line in fmtLines])
-
-        # TODO: Make default spacing and padding relative to the "base" font height rather than
-        # the first font.
         self.baseHeight = baseHeight
         self.lineSpacing = int(baseHeight * 0.34) if lineSpacing is None else lineSpacing
         self.padding = baseHeight if padding is None else padding
 
-        self.averageFontHeight = int(sum([line.maxHeight for line in fmtLines])/len(fmtLines))
+        if fmtLines:
+            self.maxLineLen = max([line.length for line in fmtLines])
+            self.averageFontHeight = int(sum([line.maxHeight for line in fmtLines])/len(fmtLines))
+        else:
+            self.maxLineLen = 0
+            self.averageFontHeight = 0
 
         self.computeDimensions()
 
@@ -361,25 +368,43 @@ class TextBox:
         for line in self.fmtLines:
             self.height += self.lineSpacing + line.maxHeight
 
-    def rescale(self, scale):
-        fontTypes = ["font", "font_bold", "font_italic", "font_bolditalic"]
-        for person, configs in PEOPLE.items():
-            fonts = {fontName:font for (fontName, font) in configs.items()
-                     if fontName in fontTypes}
-            for font in fonts.values():
-                font.rescale(scale)
+    def split(self):
+        def reversedList(reversedIt):
+            return list(reversed(reversedIt))
 
+        def splitForward(lFmtLines, rFmtLines):
+            for line in lFmtLines:
+                if line.isNewline():
+                    rFmtLines.pop(0)
+                    break
+                lFmtLines.append(rFmtLines.pop(0))
+            return [lFmtLines, rFmtLines]
+
+        splitA = splitForward(self.fmtLines[:int(len(self.fmtLines)/2)],
+                              self.fmtLines[int(len(self.fmtLines)/2):])
+        splitB = splitForward(reversedList(self.fmtLines[int(len(self.fmtLines)/2):]),
+                              reversedList(self.fmtLines[:int(len(self.fmtLines)/2)]))
+        splitB = [reversedList(fmtLines) for fmtLines in reversed(splitB)]
+
+        splitADiff = abs(len(splitA[0]) - len(splitA[1]))
+        splitBDiff = abs(len(splitB[0]) - len(splitB[1]))
+        splitToUse = splitA if splitADiff <= splitBDiff else splitB
+
+        return [TextBox(splitToUse[0], self.baseHeight, self.lineSpacing, self.padding),
+                TextBox(splitToUse[1], self.baseHeight, self.lineSpacing, self.padding)]
+
+    def rescale(self, scale):
         for fmtLine in self.fmtLines:
             fmtLine.rescale(scale)
 
         self.maxLineLen = int(self.maxLineLen * scale)
-        self.baseHeight = int(self.baseHeight * scale)
         self.lineSpacing = int(self.lineSpacing * scale)
         self.padding = int(self.padding * scale)
         self.computeDimensions()
 
-        self.averageFontHeight = \
-            int(sum([line.maxHeight for line in self.fmtLines])/len(self.fmtLines))
+        if self.fmtLines:
+            self.averageFontHeight = \
+                int(sum([line.maxHeight for line in self.fmtLines])/len(self.fmtLines))
 
     def drawText(self, img, alignment, startX=0, startY=0):
         d = ImageDraw.Draw(img)
@@ -403,32 +428,64 @@ def autoWidth(textHeight):
     textWidth = textHeight * optimalWidthHeightRatio
     return textWidth
 
-def autoRescale(textBox, art, imgHeight=None):
+def autoRescale(textBoxes, art, imgHeight=None):
+    textScaleHeight = max([textBox.height for textBox in textBoxes])
+
     if imgHeight is None:
         # TODO: Add some "sane" scaling. If there's not a lot of text, don't make it
         # giant. If the image is giant, scale it down.
-        imgHeight = textBox.height if textBox.height > art.height else art.height
+        imgHeight = max(textScaleHeight, art.height)
 
-    textBox.rescale(imgHeight/textBox.height)
+    for textBox in textBoxes:
+        textBox.rescale(imgHeight/textScaleHeight)
+
+    fontTypes = ["font", "font_bold", "font_italic", "font_bolditalic"]
+    for person, configs in PEOPLE.items():
+        fonts = {fontName:font for (fontName, font) in configs.items()
+                 if fontName in fontTypes}
+        for font in fonts.values():
+            font.rescale(imgHeight/textScaleHeight)
+
     artScale = imgHeight / art.height
     resizedArt = art.resize((int(art.width * artScale), int(art.height * artScale)))
     return resizedArt
 
 class TextBoxPos:
-    L = 0
-    R = 1
+    LEFT = 0
+    RIGHT = 1
+    SPLIT = 2
 
-def generateCaption(textBox, art, fileName, textBoxPos):
-    img = Image.new("RGB", (art.width + textBox.width, art.height), (35, 34, 52))
+def generateCaption(textBoxes, art, fileName, textBoxPos):
+    if textBoxPos == TextBoxPos.SPLIT:
+        assert len(textBoxes) == 2
+        maxTextBoxWidth = max(textBoxes[0].width, textBoxes[1].width)
+        dimensions = (art.width + (maxTextBoxWidth * 2), art.height)
+    else:
+        assert len(textBoxes) == 1
+        textBox = textBoxes[0]
+        dimensions = (art.width + textBox.width, art.height)
 
-    if textBoxPos == TextBoxPos.L:
+    img = Image.new("RGB", dimensions, (35, 34, 52))
+
+    if textBoxPos == TextBoxPos.LEFT:
         img.paste(art, (textBox.width, 0))
         textBox.drawText(img, TextBox.Align.CENTER, startX=0,
                          startY=int((art.height - textBox.height)/2))
-    elif textBoxPos == TextBoxPos.R:
+
+    elif textBoxPos == TextBoxPos.RIGHT:
         img.paste(art, (0, 0))
         textBox.drawText(img, TextBox.Align.CENTER, startX=art.width,
                          startY=int((art.height - textBox.height)/2))
+
+    elif textBoxPos == TextBoxPos.SPLIT:
+        img.paste(art, (maxTextBoxWidth, 0))
+        textBoxes[0].drawText(img, TextBox.Align.CENTER,
+                              startX=int((maxTextBoxWidth - textBoxes[0].width)/2),
+                              startY=int((art.height - textBoxes[0].height)/2))
+        textBoxes[1].drawText(img, TextBox.Align.CENTER,
+                              startX=maxTextBoxWidth + art.width +
+                              int((maxTextBoxWidth - textBoxes[1].width)/2),
+                              startY=int((art.height - textBoxes[1].height)/2))
 
     img.save(fileName)
 
@@ -440,13 +497,16 @@ def main():
 
     loadFonts(PEOPLE, baseHeight)
     fmtWords = parse_text(text)
-    textBox = TextBox(wrapRegions(fmtWords, baseTextWidth), baseHeight)
+    textBoxes = [TextBox(wrapRegions(fmtWords, baseTextWidth), baseHeight)]
 
     art = Image.open("9104645.jpg")
 
-    # NOTE: textWidth gets outdated here
-    art = autoRescale(textBox, art)
-    generateCaption(textBox, art, "caption.png", TextBoxPos.L)
+    textBoxPos = TextBoxPos.SPLIT
+    if textBoxPos is TextBoxPos.SPLIT:
+        textBoxes = textBoxes[0].split()
+
+    art = autoRescale(textBoxes, art)
+    generateCaption(textBoxes, art, "caption.png", textBoxPos)
 
 if __name__ == "__main__":
     main()
