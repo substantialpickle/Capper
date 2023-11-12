@@ -34,21 +34,24 @@ PEOPLE = {
 ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 
 # Debug printers
-def printFormatUnits(regions):
-    for i, region in enumerate(regions):
-        fmtStr = region.txt.replace("\n", "\\n")
-        print(f"i: {i:03d} | height: {region.height} | {fmtStr}")
+def printFormatWords(fmtWords):
+    for word in fmtWords:
+        print(f"word len: {word.actualLength:6.2f} | ", end="")
+        unitsLen = 0
+        for unit in word.fmtUnits:
+            unitsLen += unit.length
+        print(f"units len: {unitsLen:6.2f} | ", end="")
+        for unit in word.fmtUnits:
+            print(f"{unit.txt}|", end="")
+        print()
 
 def printFormattedLines(fmtLines):
     for i, line in enumerate(fmtLines):
-        computedSum = 0
-        for unit in line.fmtUnits:
-            computedSum += unit.length
-        print(f"{i:03} | actual: {line.length:8.2f} | computed: {computedSum:8.2f} | ", end="")
-        for unit in line.fmtUnits:
-            fmtStr = unit.txt.replace("\n", "\\n")
-            fmtStr = fmtStr.replace(" ", "|")
-            print(fmtStr, end="")
+        print(f"{i:03} | height: {line.maxHeight:4} | ", end="")
+        for word in line.fmtWords:
+            for unit in word.fmtUnits:
+                print(f"{unit.txt}:", end="")
+            print(" ", end="")
         print()
 
 class Font:
@@ -79,8 +82,48 @@ class FmtUnit:
     def __init__(self, txt, fmtState):
         self.txt = txt
         self.font = fmtState.font
-        self.actualLength = self.font.getLength(txt)
-        self.renderLength = self.actualLength
+        self.length = self.font.getLength(txt)
+
+    def rescale(self, scale):
+        self.length *= scale
+
+    def drawUnit(self, d, x, y):
+        d.text((x, y), self.txt, anchor="rs", **self.font.imgDrawKwargs())
+
+class FmtWord:
+    def __init__(self, fmtUnits, maxHeight=None):
+        self.fmtUnits = fmtUnits
+        self._maxHeight = maxHeight
+
+        self.actualLength = 0
+        self.renderLength = 0
+        for unit in fmtUnits:
+            self.actualLength += unit.length
+            self.renderLength += unit.length
+
+    def isNewline(self):
+        return self.fmtUnits == []
+
+    def maxHeight(self):
+        if self._maxHeight is not None:
+           return self._maxHeight
+
+        self._maxHeight = 0
+        for unit in self.fmtUnits:
+            self._maxHeight = max(unit.font.height, self._maxHeight)
+        return self._maxHeight
+
+    def rescale(self, scale):
+        self._maxHeight = int(self._maxHeight * scale)
+        self.actualLength *= scale
+        self.renderLength *= scale
+        for unit in self.fmtUnits:
+            unit.rescale(scale)
+
+    def drawWord(self, d, x, y):
+        for unit in reversed(self.fmtUnits):
+            unit.drawUnit(d, x, y)
+            x -= unit.length
 
 def loadFonts(people, baseHeight):
     for person, fonts in people.items():
@@ -104,7 +147,10 @@ def parse_text(text):
             self.person = person
             self.startIndx = 0
 
-        def updateState(self, currChar, currIndx, specialColl, text, regions):
+            self.fmtWords = []
+            self.fmtUnits = []
+
+        def updateState(self, currChar, currIndx, specialColl, text):
             if currChar == "[":
                 self.updatePerson(specialColl["["], text)
             elif currChar == "*":
@@ -112,7 +158,7 @@ def parse_text(text):
             elif currChar == "_":
                 self.toggleItalic(currIndx)
             elif currChar == "\n":
-                self.updateNewline(regions, currIndx)
+                self.updateNewline(currIndx)
             elif currChar == " ":
                 self.updateSpace(currIndx)
             else:
@@ -149,11 +195,19 @@ def parse_text(text):
             self.italic = not self.italic
             self.setFont()
 
-        def updateNewline(self, regions, currIndx):
-            regions.append(FmtUnit("\n", self))
+        def updateNewline(self, currIndx):
+            if self.fmtUnits:
+                self.fmtWords.append(FmtWord(self.fmtUnits))
+                self.fmtUnits = []
+
+            self.fmtWords.append(FmtWord([], self.font.height))
             self.startIndx = currIndx + 1
 
         def updateSpace(self, currIndx):
+            if self.fmtUnits:
+                self.fmtWords.append(FmtWord(self.fmtUnits))
+                self.fmtUnits = []
+
             self.startIndx = currIndx + 1
 
     specialChars = {
@@ -197,7 +251,6 @@ def parse_text(text):
 
     # Block out contiguous regions of text with unique formatting. Prune whitespace
     # immediately after character specifier.
-    regions = []
     fmtState = FmtState("arial.ttf", False, False, "p1")
     while True:
         endIndx = float('inf')
@@ -205,8 +258,8 @@ def parse_text(text):
         for char in specialChars:
             if not specialChars[char]["indices"]:
                 empty += 1
-            if specialChars[char]["indices"] and \
-               specialChars[char]["indices"][0] < endIndx:
+                continue
+            if specialChars[char]["indices"][0] < endIndx:
                 nxtSpecialChar = char
                 endIndx = specialChars[char]["indices"][0]
         if empty == len(specialChars):
@@ -216,72 +269,68 @@ def parse_text(text):
 
         currRegionText = text[fmtState.startIndx : endIndx]
         if currRegionText != "":
-            regions.append(FmtUnit(currRegionText, fmtState))
+            fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState))
 
         fmtState.updateState(
-            nxtSpecialChar, endIndx, specialChars, text, regions)
+            nxtSpecialChar, endIndx, specialChars, text)
 
     currRegionText = text[fmtState.startIndx:]
     if currRegionText != "":
-        regions.append(FmtUnit(currRegionText, fmtState))
+        fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState))
 
-    return regions
+    return fmtState.fmtWords
 
 class FormattedLine:
-    def __init__(self, length, fmtUnits, maxHeight=0):
+    def __init__(self, length, fmtWords, maxHeight=0):
         self.length = length
-        self.fmtUnits = fmtUnits
+        self.fmtWords = fmtWords
         self.maxHeight = maxHeight
+
+    def rescale(self, scale):
+        self.length *= scale
+        self.maxHeight = int(self.maxHeight * scale)
+        for word in self.fmtWords:
+            word.rescale(scale)
+
+    def drawLine(self, d, x, y):
+        for word in self.fmtWords:
+            x += word.renderLength
+            word.drawWord(d, x, y)
 
 def wrapRegions(fmtWords, width):
     # TODO: Error if we're building a new line, and it's impossible to fit it into the current
     # line length
     formattedLines = []
     currLine = FormattedLine(0, [])
-    punctuation = set(".!,?\"")
     for i, fmtWord in enumerate(fmtWords):
-        if fmtWord.txt == "\n":
+        if fmtWord.isNewline():
             formattedLines.append(currLine)
-            currLine = FormattedLine(0, [], fmtWord.font.height)
+            currLine = FormattedLine(0, [], fmtWord.maxHeight())
             continue
 
         if currLine.length == 0:
-            currLine.fmtUnits.append(fmtWord)
+            currLine.fmtWords.append(fmtWord)
             currLine.length = fmtWord.renderLength
             continue
 
-        isPunctuation = set(fmtWord.txt) <= punctuation
-        if not isPunctuation:
-            prevUnitSpaceLen = fmtWords[i-1].font.spaceLen
-            currUnitSpaceLen = fmtWord.font.spaceLen
-            fmtWord.renderLength += max(prevUnitSpaceLen, currUnitSpaceLen)
+        prevWordSpaceLen = fmtWords[i-1].fmtUnits[-1].font.spaceLen
+        currWordSpaceLen = fmtWord.fmtUnits[-1].font.spaceLen
+        fmtWord.renderLength += max(prevWordSpaceLen, currWordSpaceLen)
+
         newLen = fmtWord.renderLength + currLine.length
         if newLen > width:
-            if isPunctuation:
-                lastWord = currLine.fmtUnits.pop()
-                currLine.length -= lastWord.renderLength
-                lastWord.renderLength = lastWord.actualLength
-                formattedLines.append(currLine)
-                currLine = FormattedLine(lastWord.renderLength + fmtWord.renderLength,
-                                         [lastWord, fmtWord])
-
-            else:
-                formattedLines.append(currLine)
-                fmtWord.renderLength = fmtWord.actualLength
-                currLine = FormattedLine(fmtWord.renderLength, [fmtWord])
-
+            formattedLines.append(currLine)
+            fmtWord.renderLength = fmtWord.actualLength
+            currLine = FormattedLine(fmtWord.renderLength, [fmtWord])
             continue
 
-        currLine.fmtUnits.append(fmtWord)
+        currLine.fmtWords.append(fmtWord)
         currLine.length = newLen
 
-
     for line in formattedLines:
-        if len(line.fmtUnits) > 0:
-            line.maxHeight = 0
-        for unit in line.fmtUnits:
-            if unit.font.height > line.maxHeight:
-                line.maxHeight = unit.font.height
+        if not line.fmtWords:
+            continue
+        line.maxHeight = max([word.maxHeight() for word in line.fmtWords])
 
     return formattedLines
 
@@ -313,8 +362,6 @@ class TextBox:
             self.height += self.lineSpacing + line.maxHeight
 
     def rescale(self, scale):
-        newFontDict = {}
-
         fontTypes = ["font", "font_bold", "font_italic", "font_bolditalic"]
         for person, configs in PEOPLE.items():
             fonts = {fontName:font for (fontName, font) in configs.items()
@@ -323,11 +370,7 @@ class TextBox:
                 font.rescale(scale)
 
         for fmtLine in self.fmtLines:
-            fmtLine.length *= scale
-            fmtLine.maxHeight = int(fmtLine.maxHeight * scale)
-            for fmtUnit in fmtLine.fmtUnits:
-                fmtUnit.actualLength *= scale
-                fmtUnit.renderLength *= scale
+            fmtLine.rescale(scale)
 
         self.maxLineLen = int(self.maxLineLen * scale)
         self.baseHeight = int(self.baseHeight * scale)
@@ -350,9 +393,7 @@ class TextBox:
             elif alignment == self.Align.RIGHT:
                 x += int(self.maxLineLen - fmtLine.length)
 
-            for fmtUnit in fmtLine.fmtUnits:
-                x += fmtUnit.renderLength
-                d.text((x, y), fmtUnit.txt, anchor="rs", **fmtUnit.font.imgDrawKwargs())
+            fmtLine.drawLine(d, x, y)
             (x, y) = (startX + self.padding, y + self.lineSpacing)
 
 def autoWidth(textHeight):
