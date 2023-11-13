@@ -221,6 +221,7 @@ def parse_text(text):
         "\n" : { "indices" : [] },
         " "  : { "indices" : [] }
     }
+    originalSpecialChars = list(specialChars.keys())
 
     lastCharSlash = False
     # Collect all braces/asterisks/underscores. Prune out the markers preceded by a '\'
@@ -267,6 +268,10 @@ def parse_text(text):
         specialChars[nxtSpecialChar]["indices"].pop(0)
 
         currRegionText = text[fmtState.startIndx : endIndx]
+
+        for specialChar in originalSpecialChars:
+            currRegionText = currRegionText.replace(f"\\{specialChar}", specialChar)
+
         if currRegionText != "":
             fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState))
 
@@ -373,7 +378,7 @@ class TextBox:
             return list(reversed(reversedIt))
 
         def splitForward(lFmtLines, rFmtLines):
-            for line in lFmtLines:
+            for line in list(rFmtLines):
                 if line.isNewline():
                     rFmtLines.pop(0)
                     break
@@ -492,7 +497,7 @@ def generateCaption(textBoxes, art, fileName, textBoxPos):
 def main():
     baseHeight = 24
     baseTextWidth = autoWidth(baseHeight)
-    with open("capfmt.txt","r") as f:
+    with open("capfmt.txt","r",encoding="utf-8") as f:
         text = f.read()
 
     loadFonts(PEOPLE, baseHeight)
