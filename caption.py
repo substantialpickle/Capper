@@ -21,12 +21,20 @@ PEOPLE = {
         "font_bolditalic": "fonts/Chivo/Chivo-BoldItalic.ttf"
     },
     "p3": {
-        "relative_height" : 2,
+        "relative_height" : 1,
         "color" : "#ffffff",
-        "font": "fonts/Chivo/Chivo-Regular.ttf",
-	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
-	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
-        "font_bolditalic": "fonts/Chivo/Chivo-BoldItalic.ttf"
+        "font": "fonts/Titillium/TitilliumWeb-Regular.ttf",
+	"font_bold": "fonts/Titillium/TitilliumWeb-Bold.ttf",
+	"font_italic": "fonts/Titillium/TitilliumWeb-Italic.ttf",
+        "font_bolditalic": "fonts/Titillium/TitilliumWeb-BoldItalic.ttf"
+    },
+    "emoji" : {
+        "relative_height" : 1.5,
+        "color" : "#e4b59a",
+        "font": "fonts/NotoEmoji/NotoEmoji-Bold.ttf",
+	"font_bold": "fonts/NotoEmoji/NotoEmoji-Bold.ttf",
+	"font_italic": "fonts/NotoEmoji/NotoEmoji-Regular.ttf",
+        "font_bolditalic": "fonts/NotoEmoji/NotoEmoji-Bold.ttf"
     }
 }
 
@@ -426,12 +434,27 @@ class TextBox:
             fmtLine.drawLine(d, x, y)
             (x, y) = (startX + self.padding, y + self.lineSpacing)
 
-def autoWidth(textHeight):
-    # TODO: Determine optimal text width/height ratio based on heuristics that looks
-    # at character count.
-    optimalWidthHeightRatio = 40
-    textWidth = textHeight * optimalWidthHeightRatio
-    return textWidth
+def autoWidth(textHeight, fmtWords, textBoxPos):
+    charCount = 0
+    for word in fmtWords:
+        for unit in word.fmtUnits:
+            charCount += len(unit.txt)
+
+    # The "magic" equation below was found using data from two column captions.
+    # Thus, adjust the character count for non-split captions accorindgly.
+    if textBoxPos != TextBoxPos.SPLIT:
+        charCount /= 1.25
+
+    # These are "magic" numbers based off of data gathered from existing captions. As
+    # the character count of a caption increases, the number of characters per line
+    # tends to increase with the following linear curve.
+    optimalCharsPerLine = (0.00449057 * charCount) + 46.35
+
+    totalTextLen = 0
+    for word in fmtWords:
+        totalTextLen += word.actualLength
+    averageCharLenPx = totalTextLen/charCount
+    return optimalCharsPerLine * averageCharLenPx
 
 def autoRescale(textBoxes, art, imgHeight=None):
     textScaleHeight = max([textBox.height for textBox in textBoxes])
@@ -496,17 +519,18 @@ def generateCaption(textBoxes, art, fileName, textBoxPos):
 
 def main():
     baseHeight = 24
-    baseTextWidth = autoWidth(baseHeight)
+    textBoxPos = TextBoxPos.SPLIT
+
     with open("capfmt.txt","r",encoding="utf-8") as f:
         text = f.read()
 
     loadFonts(PEOPLE, baseHeight)
     fmtWords = parse_text(text)
+    baseTextWidth = autoWidth(baseHeight, fmtWords, textBoxPos)
     textBoxes = [TextBox(wrapRegions(fmtWords, baseTextWidth), baseHeight)]
 
     art = Image.open("9104645.jpg")
 
-    textBoxPos = TextBoxPos.SPLIT
     if textBoxPos is TextBoxPos.SPLIT:
         textBoxes = textBoxes[0].split()
 
