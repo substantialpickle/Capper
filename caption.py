@@ -13,7 +13,7 @@ PEOPLE = {
         "font_bolditalic": "fonts/Merriweather/Merriweather-BoldItalic.ttf"
     },
     "p1": {
-        "relative_height" : 1.5,
+        "relative_height" : 1,
         "color" : "#e4b59a",
         "font": "fonts/Chivo/Chivo-Regular.ttf",
 	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
@@ -460,9 +460,8 @@ def autoRescale(textBoxes, art, imgHeight=None):
     textScaleHeight = max([textBox.height for textBox in textBoxes])
 
     if imgHeight is None:
-        # TODO: Add some "sane" scaling. If there's not a lot of text, don't make it
-        # giant. If the image is giant, scale it down.
         imgHeight = max(textScaleHeight, art.height)
+        imgHeight = 3000 if imgHeight > 3000 else imgHeight
 
     for textBox in textBoxes:
         textBox.rescale(imgHeight/textScaleHeight)
@@ -473,6 +472,11 @@ def autoRescale(textBoxes, art, imgHeight=None):
                  if fontName in fontTypes}
         for font in fonts.values():
             font.rescale(imgHeight/textScaleHeight)
+
+    # After rescaling the text to be as close as possible to the target height, there
+    # may still large gaps above and below the text since PIL only allows for whole
+    # number font heights. If this is the case, scale the art down to fit to the text.
+    imgHeight = max([textBox.height for textBox in textBoxes])
 
     artScale = imgHeight / art.height
     resizedArt = art.resize((int(art.width * artScale), int(art.height * artScale)))
@@ -518,7 +522,7 @@ def generateCaption(textBoxes, art, fileName, textBoxPos):
     img.save(fileName)
 
 def main():
-    baseHeight = 24
+    baseHeight = 16
     textBoxPos = TextBoxPos.SPLIT
 
     with open("capfmt.txt","r",encoding="utf-8") as f:
