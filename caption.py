@@ -1,42 +1,11 @@
+from functools import partial
+import toml
+from numbers import Number
+from pathlib import Path
 import pdb
 import re
 
 from PIL import Image, ImageDraw, ImageFont
-
-PEOPLE = {
-    "p2": {
-        "relative_height" : 1,
-        "color" : "#e2c9cc",
-        "font": "fonts/Merriweather/Merriweather-Regular.ttf",
-	"font_bold": "fonts/Merriweather/Merriweather-Bold.ttf",
-	"font_italic": "fonts/Merriweather/Merriweather-Italic.ttf",
-        "font_bolditalic": "fonts/Merriweather/Merriweather-BoldItalic.ttf"
-    },
-    "p1": {
-        "relative_height" : 1,
-        "color" : "#e4b59a",
-        "font": "fonts/Chivo/Chivo-Regular.ttf",
-	"font_bold": "fonts/Chivo/Chivo-Bold.ttf",
-	"font_italic": "fonts/Chivo/Chivo-Italic.ttf",
-        "font_bolditalic": "fonts/Chivo/Chivo-BoldItalic.ttf"
-    },
-    "p3": {
-        "relative_height" : 1,
-        "color" : "#ffffff",
-        "font": "fonts/Titillium/TitilliumWeb-Regular.ttf",
-	"font_bold": "fonts/Titillium/TitilliumWeb-Bold.ttf",
-	"font_italic": "fonts/Titillium/TitilliumWeb-Italic.ttf",
-        "font_bolditalic": "fonts/Titillium/TitilliumWeb-BoldItalic.ttf"
-    },
-    "emoji" : {
-        "relative_height" : 1.5,
-        "color" : "#e4b59a",
-        "font": "fonts/NotoEmoji/NotoEmoji-Bold.ttf",
-	"font_bold": "fonts/NotoEmoji/NotoEmoji-Bold.ttf",
-	"font_italic": "fonts/NotoEmoji/NotoEmoji-Regular.ttf",
-        "font_bolditalic": "fonts/NotoEmoji/NotoEmoji-Bold.ttf"
-    }
-}
 
 ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 
@@ -60,6 +29,262 @@ def printFormattedLines(fmtLines):
                 print(f"{unit.txt}:", end="")
             print(" ", end="")
         print()
+
+class UserSpec:
+    rgbaRe = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])"
+                        "([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])",
+                         re.IGNORECASE)
+    rgbRe = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])",
+                         re.IGNORECASE)
+
+    def __init__(self, fileName):
+        def checkKeys(actualKeys, validKeys, requiredKeys, internalColl={}):
+            for actualKey in actualKeys:
+                assert actualKey in validKeys, \
+                    f"Unexpected option '{actualKey}', expected one of '{validKeys}'"
+                internalColl[actualKey] = {}
+                internalColl[actualKey]["default"] = False
+                # Will be set to an actual value in a "validate*()" functions
+                internalColl[actualKey]["value"] = None
+            for requiredKey in requiredKeys:
+                assert requiredKey in actualKeys, \
+                    f"Required option '{requiredKey}' not included"
+            for defaultKey in (validKeys - internalColl.keys()):
+                internalColl[defaultKey] = {}
+                internalColl[defaultKey]["default"] = True
+                # Will be set to an actual value in a "validate*()" function, or at a
+                # later stage in the program after the text has been parsed.
+                internalColl[defaultKey]["value"] = None
+
+        with open(fileName, "r", encoding="utf-8") as f:
+            spec = toml.load(f)
+
+        topLevelKeys = ["image", "text", "output", "characters"]
+        checkKeys(spec.keys(), topLevelKeys, topLevelKeys)
+
+        self.image = {}
+        imageValidKeys = ["art", "image_height", "bg_color"]
+        imageRequiredKeys = ["bg_color"]
+        checkKeys(spec["image"], imageValidKeys, imageRequiredKeys, self.image)
+        self.validateAndSetImage(spec["image"])
+
+        self.text = {}
+        textValidKeys = ["text", "base_font_height", "padding", "line_spacing",
+                         "text_width", "text_box_pos", "alignment", "credits"]
+        textRequiredKeys = ["text", "text_box_pos"]
+        checkKeys(spec["text"], textValidKeys, textRequiredKeys, self.text)
+        self.validateAndSetText(spec["text"])
+
+        self.output = {}
+        outputValidKeys = ["outputs", "output_directory", "output_img_format",
+                         "output_img_quality", "base_filename"]
+        outputRequiredKeys = ["base_filename"]
+        checkKeys(spec["output"], outputValidKeys, outputRequiredKeys, self.output)
+        self.validateAndSetOutput(spec["output"])
+
+        self.characters = []
+        characterValidKeys = ["name", "color", "relative_height", "font",
+                              "font_bold", "font_italic", "font_bolditalic"]
+        characterRequiredKeys = ["name", "color", "font"]
+        assert len(spec["characters"]) > 0, "Must specify at least one character"
+        for i, character in enumerate(spec["characters"]):
+            currChar = {}
+            checkKeys(character, characterValidKeys, characterRequiredKeys, currChar)
+            self.validateAndSetChar(character, currChar)
+            self.characters.append(currChar)
+
+        imgHeightGiven = not self.image["image_height"]["default"]
+        txtHeightGiven = not self.text["base_font_height"]["default"]
+        assert not (imgHeightGiven and txtHeightGiven), \
+            f"Cannot specify image_height and base_font_height together"
+
+        characterNames = [char["name"]["value"] for char in self.characters]
+        for name in list(characterNames):
+            characterNames.pop(0)
+            assert name not in characterNames, "Found multiple characters named " \
+                f"'{name}', cannot use the same name for multiple characters"
+
+    @staticmethod
+    def checkFileRe(coll, key):
+        fileName = coll[key]
+        assert Path(fileName).is_file(), f"File '{fileName}' does not exist"
+        return fileName
+
+    @staticmethod
+    def checkTypeAndMinValRe(expType, minVal, cond, coll, key):
+        value = coll[key]
+        assert isinstance(value, expType), \
+            f"Expected {key} to be {expType}, got {type(value)}"
+
+        assert cond in ["gt", "gte"]
+        if cond == "gt":
+            assert value > minVal, f"{key} must be greater than {minVal}, got {value}"
+        elif cond == "gte":
+            assert value >= minVal, \
+                f"{key} must be greater than or equal to {minVal}, got {value}"
+        return value
+
+    @staticmethod
+    def checkColor(coll, key):
+        value = coll[key]
+        if UserSpec.rgbaRe.fullmatch(value):
+            pass
+        elif UserSpec.rgbRe.fullmatch(value):
+            value += "FF"
+        else:
+            assert False, f"Invalid hex color {value}"
+        return value
+
+    @staticmethod
+    def valueInListRe(expList, coll, key):
+        value = coll[key]
+        assert value in expList, \
+            f"Invalid {key}, expected one of {expList}, got {value}"
+        return value
+
+    @staticmethod
+    def validateAndFillSpec(inSpec, outSpec, checkSpec):
+        for key in checkSpec:
+            if outSpec[key]["default"] == False:
+                outSpec[key]["value"] = checkSpec[key]["check"](inSpec, key)
+            else:
+                if "default" in checkSpec[key]:
+                    outSpec[key]["value"] = checkSpec[key]["default"]
+                else:
+                    outSpec[key]["value"] = None
+
+    def validateAndSetImage(self, inImage):
+        checkImage = {
+            "art" : {
+                "check" : UserSpec.checkFileRe
+            },
+            "image_height" : {
+                "check" : partial(UserSpec.checkTypeAndMinValRe, int, 0, "gt")
+            },
+            "bg_color" : {
+                "check" : UserSpec.checkColor
+            }
+        }
+        UserSpec.validateAndFillSpec(inImage, self.image, checkImage)
+
+    def validateAndSetText(self, inText):
+        def checkCredits(coll, key):
+            capCredits = coll[key]
+            assert isinstance(capCredits, list), \
+                f"Expected {capCredits} to be {list}, got {type(capCredits)}"
+            for line in capCredits:
+                assert isinstance(line, str), \
+                    f"Expected line '{line}' to be {str}, got {type(line)}"
+            return capCredits
+
+        checkText = {
+            "text" : {
+                "check" : UserSpec.checkFileRe
+            },
+            "base_font_height" : {
+                "check" : partial(UserSpec.checkTypeAndMinValRe, int, 0, "gt"),
+                "default" : 16
+            },
+            "padding" : {
+                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gte"),
+                "default" : 1
+            },
+            "line_spacing" : {
+                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gte"),
+                "default" : 0.35
+            },
+            "text_width" : {
+                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gt"),
+            },
+            "text_box_pos" : {
+                "check" : partial(UserSpec.valueInListRe, ["left", "right", "split"])
+            },
+            "alignment" : {
+                "check" : partial(UserSpec.valueInListRe, ["left", "right", "center"]),
+                "default" : "center"
+            },
+            "credits" : {
+                "check" : checkCredits,
+                "default" : []
+            }
+        }
+        UserSpec.validateAndFillSpec(inText, self.text, checkText)
+
+    def validateAndSetOutput(self, inOutput):
+        def valueIsIntInRange(minVal, maxVal, coll, key):
+            value = coll[key]
+            assert isinstance(value, int), \
+                f"Expected {key} to be {int}, got {type(value)}"
+            assert minVal <= value <= maxVal, \
+                f"{key} not in range [{minVal}, {maxVal}]"
+            return value
+
+        def checkDirectory(coll, key):
+            directory = coll[key]
+            assert Path(directory).is_dir(), \
+                f"Directory '{directory}' does not exist"
+            return directory
+
+        checkOutput = {
+            "outputs" : {
+                "check" : partial(UserSpec.valueInListRe, ["caption", "parts", "all"]),
+                "default" : "caption"
+            },
+            "output_directory" : {
+                "check" : checkDirectory,
+                "default" : ""
+            },
+            "output_img_format" : {
+                "check" : partial(UserSpec.valueInListRe, ["png", "jpg", "jpeg"]),
+                "default" : "png"
+            },
+            "output_img_quality" : {
+                "check" : partial(valueIsIntInRange, 0, 100),
+                "default" : 100
+            },
+            "base_filename" : {
+                "check" : lambda coll, key : str(coll[key]),
+            }
+        }
+        UserSpec.validateAndFillSpec(inOutput, self.output, checkOutput)
+
+    def validateAndSetChar(self, inChar, storedChar):
+        def verifyNoSpecialChars(coll, key):
+            name = coll[key]
+            specialChars = ["[", "]", "*", "_", " ", "\n"]
+            for char in specialChars:
+                assert char not in name, \
+                    f"Special character '{char}' not allowed in name '{name}'"
+            return name
+
+        checkChar = {
+            "name" : {
+                "check" : verifyNoSpecialChars
+            },
+            "relative_height" : {
+                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gt"),
+                "default" : 1
+            },
+            "color" : {
+                "check" : UserSpec.checkColor
+            },
+            "font" : {
+                "check" : UserSpec.checkFileRe
+            },
+            "font_bold" : {
+                "check" : UserSpec.checkFileRe,
+                "default" : inChar["font"]
+            },
+            "font_italic" : {
+                "check" : UserSpec.checkFileRe,
+                "default" : inChar["font"]
+            },
+            "font_bolditalic" : {
+                "check" : UserSpec.checkFileRe,
+                "default" : inChar["font"]
+            }
+        }
+        UserSpec.validateAndFillSpec(inChar, storedChar, checkChar)
 
 class Font:
     pattern = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])",
@@ -542,4 +767,5 @@ def main():
     generateCaption(textBoxes, art, "caption.png", textBoxPos)
 
 if __name__ == "__main__":
+    userSpec = UserSpec("spec.toml")
     main()
