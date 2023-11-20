@@ -4,6 +4,7 @@ from numbers import Number
 from pathlib import Path
 import pdb
 import re
+import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -56,6 +57,7 @@ class UserSpec:
                 # later stage in the program after the text has been parsed.
                 internalColl[defaultKey]["value"] = None
 
+        assert Path(fileName).is_file(), f"File '{fileName}' does not exist"
         with open(fileName, "r", encoding="utf-8") as f:
             spec = toml.load(f)
 
@@ -63,33 +65,34 @@ class UserSpec:
         checkKeys(spec.keys(), topLevelKeys, topLevelKeys)
 
         self.image = {}
-        imageValidKeys = ["art", "image_height", "bg_color"]
+        self.imageValidKeys = ["art", "image_height", "bg_color"]
         imageRequiredKeys = ["bg_color"]
-        checkKeys(spec["image"], imageValidKeys, imageRequiredKeys, self.image)
+        checkKeys(spec["image"], self.imageValidKeys, imageRequiredKeys, self.image)
         self.validateAndSetImage(spec["image"])
 
         self.text = {}
-        textValidKeys = ["text", "base_font_height", "padding", "line_spacing",
-                         "text_width", "text_box_pos", "alignment", "credits"]
+        self.textValidKeys = ["text", "base_font_height", "padding", "line_spacing",
+                              "text_width", "text_box_pos", "alignment", "credits",
+                              "credits_pos"]
         textRequiredKeys = ["text", "text_box_pos"]
-        checkKeys(spec["text"], textValidKeys, textRequiredKeys, self.text)
+        checkKeys(spec["text"], self.textValidKeys, textRequiredKeys, self.text)
         self.validateAndSetText(spec["text"])
 
         self.output = {}
-        outputValidKeys = ["outputs", "output_directory", "output_img_format",
-                         "output_img_quality", "base_filename"]
+        self.outputValidKeys = ["outputs", "output_directory", "output_img_format",
+                                "output_img_quality", "base_filename"]
         outputRequiredKeys = ["base_filename"]
-        checkKeys(spec["output"], outputValidKeys, outputRequiredKeys, self.output)
+        checkKeys(spec["output"], self.outputValidKeys, outputRequiredKeys, self.output)
         self.validateAndSetOutput(spec["output"])
 
         self.characters = []
-        characterValidKeys = ["name", "color", "relative_height", "font",
-                              "font_bold", "font_italic", "font_bolditalic"]
+        self.characterValidKeys = ["name", "color", "relative_height", "font",
+                                   "font_bold", "font_italic", "font_bolditalic"]
         characterRequiredKeys = ["name", "color", "font"]
         assert len(spec["characters"]) > 0, "Must specify at least one character"
         for i, character in enumerate(spec["characters"]):
             currChar = {}
-            checkKeys(character, characterValidKeys, characterRequiredKeys, currChar)
+            checkKeys(character, self.characterValidKeys, characterRequiredKeys, currChar)
             self.validateAndSetChar(character, currChar)
             self.characters.append(currChar)
 
@@ -103,6 +106,13 @@ class UserSpec:
             characterNames.pop(0)
             assert name not in characterNames, "Found multiple characters named " \
                 f"'{name}', cannot use the same name for multiple characters"
+
+        artNotGiven = self.image["art"]["default"]
+        if artNotGiven:
+            outputs = self.output["outputs"]["value"]
+            assert outputs == "parts", "Cannot generate caption without art. " \
+                "Either specify 'art' under [image], or set 'outputs' to something " \
+                "other than 'parts' under [output]"
 
     @staticmethod
     def checkFileRe(coll, key):
@@ -191,7 +201,7 @@ class UserSpec:
             },
             "line_spacing" : {
                 "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gte"),
-                "default" : 0.35
+                "default" : 0.2
             },
             "text_width" : {
                 "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gt"),
@@ -206,6 +216,10 @@ class UserSpec:
             "credits" : {
                 "check" : checkCredits,
                 "default" : []
+            },
+            "credits_pos" : {
+                "check" : partial(UserSpec.valueInListRe, ["tl", "tr", "bl", "br"]),
+                "default" : "tl"
             }
         }
         UserSpec.validateAndFillSpec(inText, self.text, checkText)
@@ -286,16 +300,44 @@ class UserSpec:
         }
         UserSpec.validateAndFillSpec(inChar, storedChar, checkChar)
 
-class Font:
-    pattern = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])",
-                         re.IGNORECASE)
+    def outputFilledSpec(self):
+        specFilename = (self.output["output_directory"]["value"] + "/" +
+                        self.output["base_filename"]["value"] + "_spec.toml")
+        def writeSection(f, data, orderedKeys):
+            for key in orderedKeys:
+                if data[key]["default"] == False:
+                    if isinstance(data[key]["value"], str):
+                        f.write(f"{key} = \"{data[key]['value']}\"\n")
+                    else:
+                        f.write(f"{key} = {data[key]['value']}\n")
+            for key in orderedKeys:
+                if data[key]["default"] == True:
+                    if isinstance(data[key]["value"], str):
+                        f.write(f"# {key} = \"{data[key]['value']}\"\n")
+                    else:
+                        f.write(f"# {key} = {data[key]['value']}\n")
 
+        with open(specFilename, "w") as f:
+            f.write("[image]\n")
+            writeSection(f, self.image, self.imageValidKeys)
+            f.write("\n[text]\n")
+            writeSection(f, self.text, self.textValidKeys)
+            f.write("\n[output]\n")
+            writeSection(f, self.output, self.outputValidKeys)
+            f.write("\n")
+            for char in self.characters:
+                f.write("[[characters]]\n")
+                writeSection(f, char, self.characterValidKeys)
+                f.write("\n")
+
+class Font:
     def __init__(self, path, height, color):
         self.font = ImageFont.truetype(path, height)
         self.height = height
         self.spaceLen = self.font.getlength(" ")
-        matches = self.pattern.fullmatch(color)
-        self.rgb = (int(matches[1], 16), int(matches[2], 16), int(matches[3], 16))
+        matches = UserSpec.rgbaRe.fullmatch(color)
+        self.rgba = (int(matches[1], 16), int(matches[2], 16),
+                    int(matches[3], 16), int(matches[4], 16))
 
     def getLength(self, text):
         return self.font.getlength(text)
@@ -307,7 +349,7 @@ class Font:
     def imgDrawKwargs(self):
         return {
             "font" : self.font,
-            "fill" : self.rgb,
+            "fill" : self.rgba,
         }
 
 class FmtUnit:
@@ -357,13 +399,18 @@ class FmtWord:
             unit.drawUnit(d, x, y)
             x -= unit.length
 
-def loadFonts(people, baseHeight):
-    for person, fonts in people.items():
-        people[person]['height'] = \
-            int(baseHeight * people[person]['relative_height'])
+def loadFonts(charSpecs, baseHeight):
+    fonts = {}
+    for charSpec in charSpecs:
+        charFonts = {}
         for font in ["font", "font_bold", "font_italic", "font_bolditalic"]:
-            people[person][font] = Font(
-                people[person][font], people[person]['height'], people[person]['color'])
+            height = int(baseHeight * charSpec["relative_height"]["value"])
+            if height < 1:
+                height = 1
+            charFonts[font] = Font(
+                charSpec[font]["value"], height, charSpec["color"]["value"])
+        fonts[charSpec["name"]["value"]] = charFonts
+    return fonts
 
 def parse_text(text):
     font = "arial.ttf"
@@ -398,13 +445,13 @@ def parse_text(text):
 
         def setFont(self):
             if self.bold and self.italic:
-                self.font = PEOPLE[self.person]["font_bolditalic"]
+                self.font = FONTS[self.person]["font_bolditalic"]
             elif self.bold:
-                self.font = PEOPLE[self.person]["font_bold"]
+                self.font = FONTS[self.person]["font_bold"]
             elif self.italic:
-                self.font = PEOPLE[self.person]["font_italic"]
+                self.font = FONTS[self.person]["font_italic"]
             else:
-                self.font = PEOPLE[self.person]["font"]
+                self.font = FONTS[self.person]["font"]
 
         def updatePerson(self, lBraceDict, text):
             i = lBraceDict["end_indices"].pop(0) + 1
@@ -475,7 +522,7 @@ def parse_text(text):
         assert lBrace < rBrace      # Prevents "]["
 
         person = text[lBrace+1:rBrace]
-        assert person in PEOPLE
+        assert person in FONTS, f"Unexpected character '{person}' in text file"
         specialChars["["]["people"].append(person)
         prevRBrace = rBrace
 
@@ -484,7 +531,8 @@ def parse_text(text):
 
     # Block out contiguous regions of text with unique formatting. Prune whitespace
     # immediately after character specifier.
-    fmtState = FmtState("arial.ttf", False, False, "p1")
+    firstPerson = SPEC.characters[0]["name"]["value"]
+    fmtState = FmtState(FONTS[firstPerson]["font"], False, False, firstPerson)
     while True:
         endIndx = float('inf')
         empty = 0
@@ -580,15 +628,15 @@ def wrapRegions(fmtWords, width):
 
 class TextBox:
     class Align:
-        LEFT = 0
-        RIGHT = 1
-        CENTER = 2
+        LEFT = "left"
+        RIGHT = "right"
+        CENTER = "center"
 
-    def __init__(self, fmtLines, baseHeight, lineSpacing=None, padding=None):
+    def __init__(self, fmtLines, baseHeight, lineSpacing, padding):
         self.fmtLines = fmtLines
         self.baseHeight = baseHeight
-        self.lineSpacing = int(baseHeight * 0.34) if lineSpacing is None else lineSpacing
-        self.padding = baseHeight if padding is None else padding
+        self.lineSpacing = lineSpacing
+        self.padding = padding
 
         if fmtLines:
             self.maxLineLen = max([line.length for line in fmtLines])
@@ -644,9 +692,7 @@ class TextBox:
             self.averageFontHeight = \
                 int(sum([line.maxHeight for line in self.fmtLines])/len(self.fmtLines))
 
-    def drawText(self, img, alignment, startX=0, startY=0):
-        d = ImageDraw.Draw(img)
-
+    def drawText(self, d, alignment, startX=0, startY=0):
         (x, y) = (startX + self.padding,
                   startY + self.padding - int(0.2 * self.averageFontHeight))
         for fmtLine in self.fmtLines:
@@ -658,6 +704,39 @@ class TextBox:
 
             fmtLine.drawLine(d, x, y)
             (x, y) = (startX + self.padding, y + self.lineSpacing)
+
+def drawCredits(d, capCredits, creditsPos, artX, artY, artWidth, artHeight):
+    padding = int(SPEC.text["padding"]["value"] *
+                  SPEC.text["base_font_height"]["value"])
+
+    if "credits" in FONTS:
+        font = FONTS["credits"]["font"]
+    else:
+        firstPerson = SPEC.characters[0]["name"]["value"]
+        font = FONTS[firstPerson]["font"]
+
+    fontKwargs = font.imgDrawKwargs()
+    fontKwargs.pop("fill")
+
+    (_, _, creditsWidth, creditsHeight) = \
+        d.multiline_textbbox((0, 0), capCredits, **fontKwargs)
+    # When creating a bounding box at (0, 0), PIL doesn't put the top left corner at
+    # exactly (0, 0). Manually correct this by adding an offset.
+    creditsWidth += 1
+    creditsHeight += 3
+    if creditsPos == "tl":
+        topLeft = (artX + padding, artY + padding)
+        d.multiline_text(topLeft, capCredits, align="left", **font.imgDrawKwargs())
+    elif creditsPos == "tr":
+        topLeft = (artX + artWidth - (creditsWidth + padding), artY + padding)
+        d.multiline_text(topLeft, capCredits, align="right", **font.imgDrawKwargs())
+    elif creditsPos == "bl":
+        topLeft = (artX + padding, artY + artHeight - (creditsHeight + padding))
+        d.multiline_text(topLeft, capCredits, align="left", **font.imgDrawKwargs())
+    elif creditsPos == "br":
+        topLeft = (artX + artWidth - (creditsWidth + padding),
+                   artY + artHeight - (creditsHeight + padding))
+        d.multiline_text(topLeft, capCredits, align="right", **font.imgDrawKwargs())
 
 def autoWidth(textHeight, fmtWords, textBoxPos):
     charCount = 0
@@ -685,14 +764,16 @@ def autoRescale(textBoxes, art, imgHeight=None):
     textScaleHeight = max([textBox.height for textBox in textBoxes])
 
     if imgHeight is None:
-        imgHeight = max(textScaleHeight, art.height)
+        imgHeight = textScaleHeight if art is None else max(textScaleHeight, art.height)
         imgHeight = 3000 if imgHeight > 3000 else imgHeight
 
     for textBox in textBoxes:
         textBox.rescale(imgHeight/textScaleHeight)
 
+    SPEC.text["base_font_height"]["value"] = int(
+        SPEC.text["base_font_height"]["value"] * (imgHeight/textScaleHeight))
     fontTypes = ["font", "font_bold", "font_italic", "font_bolditalic"]
-    for person, configs in PEOPLE.items():
+    for person, configs in FONTS.items():
         fonts = {fontName:font for (fontName, font) in configs.items()
                  if fontName in fontTypes}
         for font in fonts.values():
@@ -702,17 +783,22 @@ def autoRescale(textBoxes, art, imgHeight=None):
     # may still large gaps above and below the text since PIL only allows for whole
     # number font heights. If this is the case, scale the art down to fit to the text.
     imgHeight = max([textBox.height for textBox in textBoxes])
+    SPEC.image["image_height"]["value"] = imgHeight
+
+    if art is None:
+        return None
 
     artScale = imgHeight / art.height
     resizedArt = art.resize((int(art.width * artScale), int(art.height * artScale)))
     return resizedArt
 
 class TextBoxPos:
-    LEFT = 0
-    RIGHT = 1
-    SPLIT = 2
+    LEFT = "left"
+    RIGHT = "right"
+    SPLIT = "split"
 
-def generateCaption(textBoxes, art, fileName, textBoxPos):
+def generateCaption(textBoxes, textBoxPos, textAlignment, capCredits,
+                    creditsPos, art, fileName, bgColor):
     if textBoxPos == TextBoxPos.SPLIT:
         assert len(textBoxes) == 2
         maxTextBoxWidth = max(textBoxes[0].width, textBoxes[1].width)
@@ -722,50 +808,123 @@ def generateCaption(textBoxes, art, fileName, textBoxPos):
         textBox = textBoxes[0]
         dimensions = (art.width + textBox.width, art.height)
 
-    img = Image.new("RGB", dimensions, (35, 34, 52))
+    fileFmt = SPEC.output["output_img_format"]["value"]
+    colorMode = "RGBA" if fileFmt == "png" else "RGB"
+    img = Image.new(colorMode, dimensions, bgColor)
+    d = ImageDraw.Draw(img)
 
     if textBoxPos == TextBoxPos.LEFT:
         img.paste(art, (textBox.width, 0))
-        textBox.drawText(img, TextBox.Align.CENTER, startX=0,
+        textBox.drawText(d, textAlignment, startX=0,
                          startY=int((art.height - textBox.height)/2))
+        drawCredits(d, capCredits, creditsPos, textBox.width, 0,
+                    art.width, art.height)
 
     elif textBoxPos == TextBoxPos.RIGHT:
         img.paste(art, (0, 0))
-        textBox.drawText(img, TextBox.Align.CENTER, startX=art.width,
+        textBox.drawText(d, textAlignment, startX=art.width,
                          startY=int((art.height - textBox.height)/2))
+        drawCredits(d, capCredits, creditsPos, 0, 0, art.width, art.height)
 
     elif textBoxPos == TextBoxPos.SPLIT:
         img.paste(art, (maxTextBoxWidth, 0))
-        textBoxes[0].drawText(img, TextBox.Align.CENTER,
+        textBoxes[0].drawText(d, textAlignment,
                               startX=int((maxTextBoxWidth - textBoxes[0].width)/2),
                               startY=int((art.height - textBoxes[0].height)/2))
-        textBoxes[1].drawText(img, TextBox.Align.CENTER,
+        textBoxes[1].drawText(d, textAlignment,
                               startX=maxTextBoxWidth + art.width +
                               int((maxTextBoxWidth - textBoxes[1].width)/2),
                               startY=int((art.height - textBoxes[1].height)/2))
+        drawCredits(d, capCredits, creditsPos, maxTextBoxWidth, 0,
+                    art.width, art.height)
 
-    img.save(fileName)
+    img.save(fileName, optimize=True, quality=SPEC.output["output_img_quality"]["value"])
+
+def generateImages(textBoxes, art):
+    textAlignment = SPEC.text["alignment"]["value"]
+    textBoxPos = SPEC.text["text_box_pos"]["value"]
+    capCredits = "\n".join(SPEC.text["credits"]["value"])
+    creditsPos = SPEC.text["credits_pos"]["value"]
+
+    matches = SPEC.rgbaRe.fullmatch(SPEC.image["bg_color"]["value"])
+    bgColor = (int(matches[1], 16), int(matches[2], 16),
+               int(matches[3], 16), int(matches[4], 16))
+
+    imgQuality = SPEC.output["output_img_quality"]["value"]
+    baseFilename = SPEC.output["base_filename"]["value"]
+    # TODO: Will "/" cause Windows problems...? (probably)
+    directory = SPEC.output["output_directory"]["value"] + "/"
+    outputFmt = SPEC.output["output_img_format"]["value"]
+
+    fileName = (SPEC.output["output_directory"]["value"] + "/" +
+                SPEC.output["base_filename"]["value"] + "_cap." +
+                SPEC.output["output_img_format"]["value"])
+
+    SPEC.outputFilledSpec()
+
+    if SPEC.output["outputs"]["value"] in ["all", "caption"]:
+        capFile = directory + baseFilename + "_cap." + outputFmt
+        generateCaption(textBoxes, textBoxPos, textAlignment,
+                        capCredits, creditsPos, art, capFile, bgColor)
+
+    colorMode = "RGBA" if outputFmt == "png" else "RGB"
+    if SPEC.output["outputs"]["value"] in ["all", "parts"]:
+        for i, box in enumerate(textBoxes):
+            renderedTextFile = directory + baseFilename + f"_text{i}." + outputFmt
+            img = Image.new(colorMode, (box.width, box.height), bgColor)
+            box.drawText(ImageDraw.Draw(img), textAlignment)
+            img.save(renderedTextFile, optimize=True, quality=imgQuality)
+
+        artFile = directory + baseFilename + "_art." + outputFmt
+        img = Image.new(colorMode, (art.width, art.height), bgColor)
+        img.paste(art, (0, 0))
+        img.save(artFile, optimize=True, quality=imgQuality)
+
+        if SPEC.text["credits"]["value"] == []:
+            return
+
+        creditsFile = directory + baseFilename + "_credits." + outputFmt
+        img = Image.new(colorMode, (art.width, art.height), bgColor)
+        drawCredits(ImageDraw.Draw(img), capCredits, creditsPos, 0, 0,
+                    art.width, art.height)
+        img.save(creditsFile, optimize=True, quality=imgQuality)
 
 def main():
-    baseHeight = 16
-    textBoxPos = TextBoxPos.SPLIT
+    baseFontHeight = SPEC.text["base_font_height"]["value"]
 
-    with open("capfmt.txt","r",encoding="utf-8") as f:
+    with open(SPEC.text["text"]["value"],"r",encoding="utf-8") as f:
         text = f.read()
-
-    loadFonts(PEOPLE, baseHeight)
     fmtWords = parse_text(text)
-    baseTextWidth = autoWidth(baseHeight, fmtWords, textBoxPos)
-    textBoxes = [TextBox(wrapRegions(fmtWords, baseTextWidth), baseHeight)]
 
-    art = Image.open("9104645.jpg")
+    textBoxPos = SPEC.text["text_box_pos"]["value"]
+    if SPEC.text["text_width"]["default"]:
+        baseTextWidth = autoWidth(baseFontHeight, fmtWords, textBoxPos)
+        SPEC.text["text_width"]["value"] = round(baseTextWidth / baseFontHeight, 2)
+    else:
+        baseTextWidth = SPEC.text["text_width"]["value"] * baseFontHeight
+    textBoxes = [TextBox(wrapRegions(fmtWords, baseTextWidth), baseFontHeight,
+                         SPEC.text["line_spacing"]["value"] * baseFontHeight,
+                         SPEC.text["padding"]["value"] * baseFontHeight)]
 
-    if textBoxPos is TextBoxPos.SPLIT:
+    artFilename = SPEC.image["art"]["value"]
+    art = Image.open(artFilename) if artFilename is not None else None
+
+    if textBoxPos == TextBoxPos.SPLIT:
         textBoxes = textBoxes[0].split()
 
-    art = autoRescale(textBoxes, art)
-    generateCaption(textBoxes, art, "caption.png", textBoxPos)
+    if not SPEC.text["base_font_height"]["default"]:
+        baseImgHeight = max([textBox.height for textBox in textBoxes])
+    elif not SPEC.image["image_height"]["default"]:
+        baseImgHeight = SPEC.image["image_height"]["value"]
+    else:
+        baseImgHeight = None
+    art = autoRescale(textBoxes, art, baseImgHeight)
+
+    generateImages(textBoxes, art)
 
 if __name__ == "__main__":
-    userSpec = UserSpec("spec.toml")
+    assert len(sys.argv) == 2, "Must specify exactly one parameter: the specification " \
+        "file for your caption"
+    SPEC = UserSpec(sys.argv[1])
+    FONTS = loadFonts(SPEC.characters, SPEC.text["base_font_height"]["value"])
     main()
