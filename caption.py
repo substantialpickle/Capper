@@ -370,10 +370,9 @@ class FmtWord:
         self._maxHeight = maxHeight
 
         self.actualLength = 0
-        self.renderLength = 0
         for unit in fmtUnits:
             self.actualLength += unit.length
-            self.renderLength += unit.length
+        self.spaceLength = 0
 
     def isNewline(self):
         return self.fmtUnits == []
@@ -390,7 +389,7 @@ class FmtWord:
     def rescale(self, scale):
         self._maxHeight = int(self._maxHeight * scale)
         self.actualLength *= scale
-        self.renderLength *= scale
+        self.spaceLength *= scale
         for unit in self.fmtUnits:
             unit.rescale(scale)
 
@@ -580,7 +579,7 @@ class FormattedLine:
 
     def drawLine(self, d, x, y):
         for word in self.fmtWords:
-            x += word.renderLength
+            x += word.actualLength + word.spaceLength
             word.drawWord(d, x, y)
 
     def isNewline(self):
@@ -599,18 +598,18 @@ def wrapRegions(fmtWords, width):
 
         if currLine.length == 0:
             currLine.fmtWords.append(fmtWord)
-            currLine.length = fmtWord.renderLength
+            currLine.length = fmtWord.actualLength
             continue
 
         prevWordSpaceLen = fmtWords[i-1].fmtUnits[-1].font.spaceLen
         currWordSpaceLen = fmtWord.fmtUnits[-1].font.spaceLen
-        fmtWord.renderLength += max(prevWordSpaceLen, currWordSpaceLen)
+        fmtWord.spaceLength = min(prevWordSpaceLen, currWordSpaceLen)
 
-        newLen = fmtWord.renderLength + currLine.length
+        newLen = fmtWord.actualLength + fmtWord.spaceLength + currLine.length
         if newLen > width:
             formattedLines.append(currLine)
-            fmtWord.renderLength = fmtWord.actualLength
-            currLine = FormattedLine(fmtWord.renderLength, [fmtWord])
+            fmtWord.spaceLen = 0
+            currLine = FormattedLine(fmtWord.actualLength, [fmtWord])
             continue
 
         currLine.fmtWords.append(fmtWord)
@@ -855,10 +854,6 @@ def generateImages(textBoxes, art):
     # TODO: Will "/" cause Windows problems...? (probably)
     directory = SPEC.output["output_directory"]["value"] + "/"
     outputFmt = SPEC.output["output_img_format"]["value"]
-
-    fileName = (SPEC.output["output_directory"]["value"] + "/" +
-                SPEC.output["base_filename"]["value"] + "_cap." +
-                SPEC.output["output_img_format"]["value"])
 
     SPEC.outputFilledSpec()
 
