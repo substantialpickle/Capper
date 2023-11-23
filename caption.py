@@ -590,39 +590,48 @@ def wrapRegions(fmtWords, width):
     # TODO: Error if we're building a new line, and it's impossible to fit it into the current
     # line length
     formattedLines = []
-    currLine = FormattedLine(0, [])
+    currLen = 0
+    currWords = []
+    currMaxHeight = 0
+
     for i, fmtWord in enumerate(fmtWords):
         if fmtWord.isNewline():
+            currLine = FormattedLine(currLen, currWords, currMaxHeight)
             formattedLines.append(currLine)
-            currLine = FormattedLine(0, [], fmtWord.maxHeight())
+
+            currLen = 0
+            currWords = []
+            currMaxHeight = fmtWord.maxHeight()
             continue
 
-        if currLine.length == 0:
-            currLine.fmtWords.append(fmtWord)
-            currLine.length = fmtWord.actualLength
+        if currLen == 0:
+            currWords.append(fmtWord)
+            currLen += fmtWord.actualLength
+            currMaxHeight = max(fmtWord.maxHeight(), currMaxHeight)
             continue
 
         prevWordSpaceLen = fmtWords[i-1].fmtUnits[-1].font.spaceLen
         currWordSpaceLen = fmtWord.fmtUnits[-1].font.spaceLen
         fmtWord.spaceLength = min(prevWordSpaceLen, currWordSpaceLen)
 
-        newLen = fmtWord.actualLength + fmtWord.spaceLength + currLine.length
+        newLen = fmtWord.actualLength + fmtWord.spaceLength + currLen
         if newLen > width:
+            currLine = FormattedLine(currLen, currWords, currMaxHeight)
             formattedLines.append(currLine)
-            fmtWord.spaceLen = 0
-            currLine = FormattedLine(fmtWord.actualLength, [fmtWord])
+            fmtWord.spaceLength = 0
+
+            currLen = fmtWord.actualLength
+            currWords = [fmtWord]
+            currMaxHeight = fmtWord.maxHeight()
             continue
 
-        currLine.fmtWords.append(fmtWord)
-        currLine.length = newLen
+        currWords.append(fmtWord)
+        currLen = newLen
+        currMaxHeight = max(fmtWord.maxHeight(), currMaxHeight)
 
-    if currLine.fmtWords:
+    if currWords:
+        currLine = FormattedLine(currLen, currWords, currMaxHeight)
         formattedLines.append(currLine)
-
-    for line in formattedLines:
-        if not line.fmtWords:
-            continue
-        line.maxHeight = max([word.maxHeight() for word in line.fmtWords])
 
     return formattedLines
 
