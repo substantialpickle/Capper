@@ -10,6 +10,13 @@ from PIL import Image, ImageDraw, ImageFont
 
 ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 
+# TODOs:
+#    - print log messages + some info about the caption throughout the program
+#    - print nicer user error messages/distinguish user errors from logical errors
+#    - write up a guide
+#    - split program into multiple files
+#    - add option for text stroke size/color
+
 # Debug printers
 def printFormatWords(fmtWords):
     for word in fmtWords:
@@ -356,10 +363,11 @@ class FmtUnit:
     def __init__(self, txt, font):
         self.txt = txt
         self.font = font
-        self.length = self.font.getLength(txt)
+        self.length = 0
+        self.setLength()
 
-    def rescale(self, scale):
-        self.length *= scale
+    def setLength(self):
+        self.length = self.font.getLength(self.txt)
 
     def drawUnit(self, d, x, y):
         d.text((x, y), self.txt, anchor="ls", **self.font.imgDrawKwargs())
@@ -385,18 +393,6 @@ class FmtWord:
         for unit in self.fmtUnits:
             self._maxHeight = max(unit.font.height, self._maxHeight)
         return self._maxHeight
-
-    def rescale(self, scale):
-        self._maxHeight = int(self._maxHeight * scale)
-        self.actualLength *= scale
-        self.spaceLength *= scale
-        for unit in self.fmtUnits:
-            unit.rescale(scale)
-
-    def drawWord(self, d, x, y):
-        for unit in self.fmtUnits:
-            unit.drawUnit(d, x, y)
-            x += unit.length
 
 def loadFonts(charSpecs, baseHeight):
     fonts = {}
@@ -566,29 +562,71 @@ def parse_text(text):
     return fmtState.fmtWords
 
 class FormattedLine:
-    def __init__(self, length, fmtWords, maxHeight=0):
-        self.length = length
-        self.fmtWords = fmtWords
+    def __init__(self, fmtWords, maxHeight):
         self.maxHeight = maxHeight
+        self.accumUnits = []
+        self.spaceLens = []
+        self.length = 0
+
+        if not fmtWords:
+            return
+
+        currFont = fmtWords[0].fmtUnits[0].font
+        currTxt = ""
+
+        # Accumulate contiguous FmtUnits which are formatted in the same way into a
+        # a single FmtUnit. Rendering the space between words (especially on Windows)
+        # behaves better when space is encoded in the text to render, rather than
+        # manually specifying the coordinates that each word should be printed at.
+        for word in fmtWords:
+            firstUnit = word.fmtUnits[0]
+            if firstUnit.font == currFont:
+                if currTxt != "":
+                    currTxt += " "
+                currTxt += firstUnit.txt
+            else:
+                tmpUnit = FmtUnit(currTxt, currFont)
+                self.accumUnits.append(tmpUnit)
+                self.spaceLens.append(word.spaceLength)
+
+                currTxt = firstUnit.txt
+                currFont = firstUnit.font
+
+            for unit in word.fmtUnits[1:]:
+                if unit.font == currFont:
+                    currTxt += unit.txt
+                else:
+                    tmpUnit = FmtUnit(currTxt, currFont)
+                    self.accumUnits.append(tmpUnit)
+                    self.spaceLens.append(0)
+
+                    currTxt = unit.txt
+                    currFont = unit.font
+        if currTxt != "":
+            tmpUnit = FmtUnit(currTxt, currFont)
+            self.accumUnits.append(tmpUnit)
+            self.spaceLens.append(0)
+
+        self.length = (sum([unit.length for unit in self.accumUnits]) +
+                       sum(self.spaceLens))
 
     def rescale(self, scale):
-        self.length *= scale
         self.maxHeight = int(self.maxHeight * scale)
-        for word in self.fmtWords:
-            word.rescale(scale)
+        self.spaceLens = [length * scale for length in self.spaceLens]
+        for unit in self.accumUnits:
+            unit.setLength()
+        self.length = (sum([unit.length for unit in self.accumUnits]) +
+                       sum(self.spaceLens))
 
     def drawLine(self, d, x, y):
-        for word in self.fmtWords:
-            x += word.spaceLength
-            word.drawWord(d, x, y)
-            x += word.actualLength
+        for (spaceLen, unit) in zip(self.spaceLens, self.accumUnits):
+            unit.drawUnit(d, x, y)
+            x += unit.length + spaceLen
 
     def isNewline(self):
-        return not self.fmtWords
+        return self.length == 0
 
 def wrapRegions(fmtWords, width):
-    # TODO: Error if we're building a new line, and it's impossible to fit it into the current
-    # line length
     formattedLines = []
     currLen = 0
     currWords = []
@@ -596,7 +634,7 @@ def wrapRegions(fmtWords, width):
 
     for i, fmtWord in enumerate(fmtWords):
         if fmtWord.isNewline():
-            currLine = FormattedLine(currLen, currWords, currMaxHeight)
+            currLine = FormattedLine(currWords, currMaxHeight)
             formattedLines.append(currLine)
 
             currLen = 0
@@ -616,7 +654,7 @@ def wrapRegions(fmtWords, width):
 
         newLen = fmtWord.actualLength + fmtWord.spaceLength + currLen
         if newLen > width:
-            currLine = FormattedLine(currLen, currWords, currMaxHeight)
+            currLine = FormattedLine(currWords, currMaxHeight)
             formattedLines.append(currLine)
             fmtWord.spaceLength = 0
 
@@ -630,7 +668,7 @@ def wrapRegions(fmtWords, width):
         currMaxHeight = max(fmtWord.maxHeight(), currMaxHeight)
 
     if currWords:
-        currLine = FormattedLine(currLen, currWords, currMaxHeight)
+        currLine = FormattedLine(currWords, currMaxHeight)
         formattedLines.append(currLine)
 
     return formattedLines
@@ -692,7 +730,8 @@ class TextBox:
         for fmtLine in self.fmtLines:
             fmtLine.rescale(scale)
 
-        self.maxLineLen = int(self.maxLineLen * scale)
+        if self.fmtLines:
+            self.maxLineLen = max([line.length for line in self.fmtLines])
         self.lineSpacing = int(self.lineSpacing * scale)
         self.padding = int(self.padding * scale)
         self.computeDimensions()
@@ -707,9 +746,9 @@ class TextBox:
         for fmtLine in self.fmtLines:
             y += fmtLine.maxHeight
             if alignment == self.Align.CENTER:
-                x += int((self.maxLineLen - fmtLine.length)/2)
+                x += (self.maxLineLen - fmtLine.length)/2
             elif alignment == self.Align.RIGHT:
-                x += int(self.maxLineLen - fmtLine.length)
+                x += self.maxLineLen - fmtLine.length
 
             fmtLine.drawLine(d, x, y)
             (x, y) = (startX + self.padding, y + self.lineSpacing)
@@ -774,10 +813,7 @@ def autoRescale(textBoxes, art, imgHeight=None):
 
     if imgHeight is None:
         imgHeight = textScaleHeight if art is None else max(textScaleHeight, art.height)
-        imgHeight = 3000 if imgHeight > 3000 else imgHeight
-
-    for textBox in textBoxes:
-        textBox.rescale(imgHeight/textScaleHeight)
+        imgHeight = min(imgHeight, 3000)
 
     SPEC.text["base_font_height"]["value"] = int(
         SPEC.text["base_font_height"]["value"] * (imgHeight/textScaleHeight))
@@ -787,6 +823,11 @@ def autoRescale(textBoxes, art, imgHeight=None):
                  if fontName in fontTypes}
         for font in fonts.values():
             font.rescale(imgHeight/textScaleHeight)
+
+    # Must perform this rescale *after* fonts have been rescaled so that text lengths
+    # are recalculated properly.
+    for textBox in textBoxes:
+        textBox.rescale(imgHeight/textScaleHeight)
 
     # After rescaling the text to be as close as possible to the target height, there
     # may still large gaps above and below the text since PIL only allows for whole
@@ -861,7 +902,6 @@ def generateImages(textBoxes, art):
 
     imgQuality = SPEC.output["output_img_quality"]["value"]
     baseFilename = SPEC.output["base_filename"]["value"]
-    # TODO: Will "/" cause Windows problems...? (probably)
     directory = SPEC.output["output_directory"]["value"] + "/"
     outputFmt = SPEC.output["output_img_format"]["value"]
 
