@@ -353,16 +353,16 @@ class Font:
         }
 
 class FmtUnit:
-    def __init__(self, txt, fmtState):
+    def __init__(self, txt, font):
         self.txt = txt
-        self.font = fmtState.font
+        self.font = font
         self.length = self.font.getLength(txt)
 
     def rescale(self, scale):
         self.length *= scale
 
     def drawUnit(self, d, x, y):
-        d.text((x, y), self.txt, anchor="rs", **self.font.imgDrawKwargs())
+        d.text((x, y), self.txt, anchor="ls", **self.font.imgDrawKwargs())
 
 class FmtWord:
     def __init__(self, fmtUnits, maxHeight=None):
@@ -394,9 +394,9 @@ class FmtWord:
             unit.rescale(scale)
 
     def drawWord(self, d, x, y):
-        for unit in reversed(self.fmtUnits):
+        for unit in self.fmtUnits:
             unit.drawUnit(d, x, y)
-            x -= unit.length
+            x += unit.length
 
 def loadFonts(charSpecs, baseHeight):
     fonts = {}
@@ -553,14 +553,14 @@ def parse_text(text):
             currRegionText = currRegionText.replace(f"\\{specialChar}", specialChar)
 
         if currRegionText != "":
-            fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState))
+            fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState.font))
 
         fmtState.updateState(
             nxtSpecialChar, endIndx, specialChars, text)
 
     currRegionText = text[fmtState.startIndx:]
     if currRegionText != "":
-        fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState))
+        fmtState.fmtUnits.append(FmtUnit(currRegionText, fmtState.font))
         fmtState.fmtWords.append(FmtWord(fmtState.fmtUnits))
 
     return fmtState.fmtWords
@@ -579,8 +579,9 @@ class FormattedLine:
 
     def drawLine(self, d, x, y):
         for word in self.fmtWords:
-            x += word.actualLength + word.spaceLength
+            x += word.spaceLength
             word.drawWord(d, x, y)
+            x += word.actualLength
 
     def isNewline(self):
         return not self.fmtWords
