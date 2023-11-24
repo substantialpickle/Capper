@@ -1,4 +1,7 @@
+import colorama
 from functools import partial
+from termcolor import cprint
+import time
 import toml
 from numbers import Number
 from pathlib import Path
@@ -11,11 +14,11 @@ from PIL import Image, ImageDraw, ImageFont
 ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 
 # TODOs:
-#    - print log messages + some info about the caption throughout the program
 #    - print nicer user error messages/distinguish user errors from logical errors
 #    - write up a guide
 #    - split program into multiple files
 #    - add option for text stroke size/color
+#    - add option to open image when the program finishes
 
 # Debug printers
 def printFormatWords(fmtWords):
@@ -37,6 +40,60 @@ def printFormattedLines(fmtLines):
                 print(f"{unit.txt}:", end="")
             print(" ", end="")
         print()
+
+class Logging:
+    width = 80
+    baseUsable = width - 4
+    tab = 8
+
+    @staticmethod
+    def divider():
+        print(f"+{'':->{Logging.width-2}}+")
+    @staticmethod
+    def header(text):
+        Logging.divider()
+        cprint(f"| {text:<{Logging.baseUsable}} |", attrs=["bold"])
+
+    @staticmethod
+    def subSection(text, levels=1, color="cyan"):
+        print("| ", end="")
+        usable = Logging.baseUsable - (Logging.tab * levels)
+        cprint(f"{'': >{Logging.tab * levels}}{text:<{usable}}", color, end="")
+        print(" |")
+
+    @staticmethod
+    def table(table, levels=1):
+        printTable = []
+        for (lCol, rCol) in table:
+            printTable.append((str(lCol), str(rCol)))
+
+        lColLen = 0
+        rColLen = 0
+        for (lCol, rCol) in printTable:
+            lColLen = max(len(lCol), lColLen)
+            rColLen = max(len(rCol), rColLen)
+        lColLen += 2
+        rColLen += 2
+
+        tableEdge = f"+{'':->{lColLen}}+{'':->{rColLen}}+"
+        usable = Logging.baseUsable - (Logging.tab * levels)
+
+        print(f"| {'': >{Logging.baseUsable}} |")
+        print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
+        for (lCol, rCol) in table:
+            row = f"| {lCol:<{lColLen-2}} | {rCol:>{rColLen-2}} |"
+            print(f"| {'': >{Logging.tab * levels}}{row:<{usable}} |")
+        print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
+
+    @staticmethod
+    def filesizeStr(filename):
+        sizeBytes = Path(filename).stat().st_size
+        units = ["B", "KB", "MB", "GB", "TB"]
+        for unit in units:
+            if sizeBytes >= 1024:
+                sizeBytes = sizeBytes / 1024
+            else:
+                return f"{sizeBytes:.2f} {unit:>2}"
 
 class UserSpec:
     rgbaRe = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])"
@@ -64,19 +121,23 @@ class UserSpec:
                 # later stage in the program after the text has been parsed.
                 internalColl[defaultKey]["value"] = None
 
+        Logging.header(f"Verifying specification file '{fileName}'")
         assert Path(fileName).is_file(), f"File '{fileName}' does not exist"
         with open(fileName, "r", encoding="utf-8") as f:
             spec = toml.load(f)
 
+        Logging.subSection("Checking top level headers...")
         topLevelKeys = ["image", "text", "output", "characters"]
         checkKeys(spec.keys(), topLevelKeys, topLevelKeys)
 
+        Logging.subSection("Checking [image]...")
         self.image = {}
         self.imageValidKeys = ["art", "image_height", "bg_color"]
         imageRequiredKeys = ["bg_color"]
         checkKeys(spec["image"], self.imageValidKeys, imageRequiredKeys, self.image)
         self.validateAndSetImage(spec["image"])
 
+        Logging.subSection("Checking [text]...")
         self.text = {}
         self.textValidKeys = ["text", "base_font_height", "padding", "line_spacing",
                               "text_width", "text_box_pos", "alignment", "credits",
@@ -85,6 +146,7 @@ class UserSpec:
         checkKeys(spec["text"], self.textValidKeys, textRequiredKeys, self.text)
         self.validateAndSetText(spec["text"])
 
+        Logging.subSection("Checking [output]...")
         self.output = {}
         self.outputValidKeys = ["outputs", "output_directory", "output_img_format",
                                 "output_img_quality", "base_filename"]
@@ -92,21 +154,18 @@ class UserSpec:
         checkKeys(spec["output"], self.outputValidKeys, outputRequiredKeys, self.output)
         self.validateAndSetOutput(spec["output"])
 
+        Logging.subSection("Checking [[characters]]...")
         self.characters = []
         self.characterValidKeys = ["name", "color", "relative_height", "font",
                                    "font_bold", "font_italic", "font_bolditalic"]
         characterRequiredKeys = ["name", "color", "font"]
         assert len(spec["characters"]) > 0, "Must specify at least one character"
         for i, character in enumerate(spec["characters"]):
+            Logging.subSection(f"Checking character #{i+1}...", 2)
             currChar = {}
             checkKeys(character, self.characterValidKeys, characterRequiredKeys, currChar)
             self.validateAndSetChar(character, currChar)
             self.characters.append(currChar)
-
-        imgHeightGiven = not self.image["image_height"]["default"]
-        txtHeightGiven = not self.text["base_font_height"]["default"]
-        assert not (imgHeightGiven and txtHeightGiven), \
-            f"Cannot specify image_height and base_font_height together"
 
         characterNames = [char["name"]["value"] for char in self.characters]
         for name in list(characterNames):
@@ -114,12 +173,20 @@ class UserSpec:
             assert name not in characterNames, "Found multiple characters named " \
                 f"'{name}', cannot use the same name for multiple characters"
 
+        Logging.subSection("Checking conflicts between headers...")
+        imgHeightGiven = not self.image["image_height"]["default"]
+        txtHeightGiven = not self.text["base_font_height"]["default"]
+        assert not (imgHeightGiven and txtHeightGiven), \
+            f"Cannot specify image_height and base_font_height together"
+
         artNotGiven = self.image["art"]["default"]
         if artNotGiven:
             outputs = self.output["outputs"]["value"]
             assert outputs == "parts", "Cannot generate caption without art. " \
                 "Either specify 'art' under [image], or set 'outputs' to something " \
                 "other than 'parts' under [output]"
+
+        Logging.subSection("Specification file is valid!", 1, "green")
 
     @staticmethod
     def checkFileRe(coll, key):
@@ -307,9 +374,7 @@ class UserSpec:
         }
         UserSpec.validateAndFillSpec(inChar, storedChar, checkChar)
 
-    def outputFilledSpec(self):
-        specFilename = (self.output["output_directory"]["value"] + "/" +
-                        self.output["base_filename"]["value"] + "_spec.toml")
+    def outputFilledSpec(self, specFilename):
         def writeSection(f, data, orderedKeys):
             for key in orderedKeys:
                 if data[key]["default"] == False:
@@ -408,11 +473,6 @@ def loadFonts(charSpecs, baseHeight):
     return fonts
 
 def parse_text(text):
-    font = "arial.ttf"
-    style = ""
-    curUnit = ""
-    units = []
-
     class FmtState:
         def __init__(self, font, bold, italic, person):
             self.font = font
@@ -484,6 +544,7 @@ def parse_text(text):
 
             self.startIndx = currIndx + 1
 
+    Logging.subSection(f"Parsing text file")
     specialChars = {
         "["  : {
             "indices" : [],
@@ -627,6 +688,7 @@ class FormattedLine:
         return self.length == 0
 
 def wrapRegions(fmtWords, width):
+    Logging.subSection("Wrapping parsed text")
     formattedLines = []
     currLen = 0
     currWords = []
@@ -713,6 +775,7 @@ class TextBox:
                 lFmtLines.append(rFmtLines.pop(0))
             return [lFmtLines, rFmtLines]
 
+        Logging.subSection("Splitting wrapped text")
         splitA = splitForward(self.fmtLines[:int(len(self.fmtLines)/2)],
                               self.fmtLines[int(len(self.fmtLines)/2):])
         splitB = splitForward(reversedList(self.fmtLines[int(len(self.fmtLines)/2):]),
@@ -809,6 +872,10 @@ def autoWidth(textHeight, fmtWords, textBoxPos):
     return optimalCharsPerLine * averageCharLenPx
 
 def autoRescale(textBoxes, art, imgHeight=None):
+    logStr = "Automatically rescaling text"
+    if art is not None:
+        logStr += " and art"
+    Logging.subSection(logStr)
     textScaleHeight = max([textBox.height for textBox in textBoxes])
 
     if imgHeight is None:
@@ -891,6 +958,10 @@ def generateCaption(textBoxes, textBoxPos, textAlignment, capCredits,
     img.save(fileName, optimize=True, quality=SPEC.output["output_img_quality"]["value"])
 
 def generateImages(textBoxes, art):
+    Logging.header("Generating images")
+    fileSizeTable = []
+
+    # Collect global values to use as arguments for generating files
     textAlignment = SPEC.text["alignment"]["value"]
     textBoxPos = SPEC.text["text_box_pos"]["value"]
     capCredits = "\n".join(SPEC.text["credits"]["value"])
@@ -902,16 +973,26 @@ def generateImages(textBoxes, art):
 
     imgQuality = SPEC.output["output_img_quality"]["value"]
     baseFilename = SPEC.output["base_filename"]["value"]
-    directory = SPEC.output["output_directory"]["value"] + "/"
+    directory = SPEC.output["output_directory"]["value"]
+    if directory != "" and directory[-1] != "/" and directory[-1] != "\\":
+        directory += "/"
     outputFmt = SPEC.output["output_img_format"]["value"]
 
-    SPEC.outputFilledSpec()
+    # Generate filled in TOML file
+    specFilename = directory + baseFilename + "_filledspec.toml"
+    SPEC.outputFilledSpec(specFilename)
+    Logging.subSection(f"Generated filled-in specification '{specFilename}'")
+    fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename)))
 
+    # Generate caption
     if SPEC.output["outputs"]["value"] in ["all", "caption"]:
         capFile = directory + baseFilename + "_cap." + outputFmt
         generateCaption(textBoxes, textBoxPos, textAlignment,
                         capCredits, creditsPos, art, capFile, bgColor)
+        Logging.subSection(f"Generated caption '{capFile}'")
+        fileSizeTable.append((capFile, Logging.filesizeStr(capFile)))
 
+    # Generate parts
     colorMode = "RGBA" if outputFmt == "png" else "RGB"
     if SPEC.output["outputs"]["value"] in ["all", "parts"]:
         for i, box in enumerate(textBoxes):
@@ -919,13 +1000,19 @@ def generateImages(textBoxes, art):
             img = Image.new(colorMode, (box.width, box.height), bgColor)
             box.drawText(ImageDraw.Draw(img), textAlignment)
             img.save(renderedTextFile, optimize=True, quality=imgQuality)
+            Logging.subSection(f"Generated text-only image '{renderedTextFile}'")
+            fileSizeTable.append((renderedTextFile, Logging.filesizeStr(renderedTextFile)))
 
         artFile = directory + baseFilename + "_art." + outputFmt
         img = Image.new(colorMode, (art.width, art.height), bgColor)
         img.paste(art, (0, 0))
         img.save(artFile, optimize=True, quality=imgQuality)
+        Logging.subSection(f"Generated rescaled art '{artFile}'")
+        fileSizeTable.append((artFile, Logging.filesizeStr(artFile)))
 
         if SPEC.text["credits"]["value"] == []:
+            Logging.subSection("Successfully generated all images!", 1, "green")
+            Logging.table(fileSizeTable)
             return
 
         creditsFile = directory + baseFilename + "_credits." + outputFmt
@@ -933,13 +1020,20 @@ def generateImages(textBoxes, art):
         drawCredits(ImageDraw.Draw(img), capCredits, creditsPos, 0, 0,
                     art.width, art.height)
         img.save(creditsFile, optimize=True, quality=imgQuality)
+        Logging.subSection(f"Generated credits '{creditsFile}'")
+        fileSizeTable.append((creditsFile, Logging.filesizeStr(creditsFile)))
+    Logging.subSection("Successfully generated all images!", 1, "green")
+    Logging.table(fileSizeTable)
 
 def main():
+    textInfoTable = []
     baseFontHeight = SPEC.text["base_font_height"]["value"]
 
-    with open(SPEC.text["text"]["value"],"r",encoding="utf-8") as f:
+    Logging.header(f"Reading and fitting text from '{SPEC.text['text']['value']}'")
+    with open(SPEC.text["text"]["value"], "r",encoding="utf-8") as f:
         text = f.read()
     fmtWords = parse_text(text)
+    textInfoTable.append(("Word Count", len(fmtWords)))
 
     textBoxPos = SPEC.text["text_box_pos"]["value"]
     if SPEC.text["text_width"]["default"]:
@@ -947,15 +1041,20 @@ def main():
         SPEC.text["text_width"]["value"] = round(baseTextWidth / baseFontHeight, 2)
     else:
         baseTextWidth = SPEC.text["text_width"]["value"] * baseFontHeight
-    textBoxes = [TextBox(wrapRegions(fmtWords, baseTextWidth), baseFontHeight,
-                         SPEC.text["line_spacing"]["value"] * baseFontHeight,
-                         SPEC.text["padding"]["value"] * baseFontHeight)]
+    wrappedText = wrapRegions(fmtWords, baseTextWidth)
+    textBoxes = [TextBox(wrappedText, baseFontHeight,
+                 SPEC.text["line_spacing"]["value"] * baseFontHeight,
+                 SPEC.text["padding"]["value"] * baseFontHeight)]
 
     artFilename = SPEC.image["art"]["value"]
     art = Image.open(artFilename) if artFilename is not None else None
 
     if textBoxPos == TextBoxPos.SPLIT:
         textBoxes = textBoxes[0].split()
+        textInfoTable.append(("Line Count (left)", len(textBoxes[0].fmtLines)))
+        textInfoTable.append(("Line Count (right)", len(textBoxes[1].fmtLines)))
+    else:
+        textInfoTable.append(("Line Count", len(textBoxes[0].fmtLines)))
 
     if not SPEC.text["base_font_height"]["default"]:
         baseImgHeight = max([textBox.height for textBox in textBoxes])
@@ -965,11 +1064,17 @@ def main():
         baseImgHeight = None
     art = autoRescale(textBoxes, art, baseImgHeight)
 
+    Logging.subSection("Successfully manipulated text!", 1, "green")
+    Logging.table(textInfoTable)
     generateImages(textBoxes, art)
 
 if __name__ == "__main__":
+    colorama.init()
+    START_TIME = time.time()
     assert len(sys.argv) == 2, "Must specify exactly one parameter: the specification " \
         "file for your caption"
     SPEC = UserSpec(sys.argv[1])
     FONTS = loadFonts(SPEC.characters, SPEC.text["base_font_height"]["value"])
     main()
+    Logging.header(f"Program finished in {time.time()-START_TIME:.2f} seconds")
+    Logging.divider()
