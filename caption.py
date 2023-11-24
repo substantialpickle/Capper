@@ -72,26 +72,36 @@ class Logging:
 
     @staticmethod
     def table(table, levels=1):
-        printTable = []
-        for (lCol, rCol) in table:
-            printTable.append((str(lCol), str(rCol)))
+        assert len(table) > 0, "Expected log table to have at least one element"
+        colls = len(table[0])
+        tableStrs = []
 
-        lColLen = 0
-        rColLen = 0
-        for (lCol, rCol) in printTable:
-            lColLen = max(len(lCol), lColLen)
-            rColLen = max(len(rCol), rColLen)
-        lColLen += 2
-        rColLen += 2
+        for row in table:
+            strRow = []
+            for coll in row:
+                strRow.append(str(coll))
+            tableStrs.append(strRow)
 
-        tableEdge = f"+{'':->{lColLen}}+{'':->{rColLen}}+"
+        collLens = []
+        for collI in range(colls):
+            currMaxLen = 0
+            for row in tableStrs:
+                currMaxLen = max(len(row[collI]), currMaxLen)
+            collLens.append(currMaxLen + 2)
+
+        tableEdge = "+"
+        for length in collLens:
+            tableEdge += f"{'':->{length}}+"
         usable = Logging.baseUsable - (Logging.tab * levels)
 
         print(f"| {'': >{Logging.baseUsable}} |")
         print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
-        for (lCol, rCol) in table:
-            row = f"| {lCol:<{lColLen-2}} | {rCol:>{rColLen-2}} |"
-            print(f"| {'': >{Logging.tab * levels}}{row:<{usable}} |")
+        for row in tableStrs:
+            rowStr = "| "
+            for (coll, collLen) in zip(row, collLens):
+                align = ">" if any(c.isdigit() for c in coll) else "<"
+                rowStr += f"{coll:{align}{collLen-2}} | "
+            print(f"| {'': >{Logging.tab * levels}}{rowStr:<{usable}} |")
         print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
 
     @staticmethod
