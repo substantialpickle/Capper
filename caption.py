@@ -16,7 +16,6 @@ ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 # TODOs:
 #    - write up a guide
 #    - split program into multiple files
-#    - add option for text stroke size/color
 #    - add option to open image when the program finishes
 #    - fix credits
 
@@ -58,6 +57,7 @@ class Logging:
     @staticmethod
     def divider():
         print(f"+{'':->{Logging.width-2}}+")
+
     @staticmethod
     def header(text):
         Logging.divider()
@@ -165,8 +165,9 @@ class UserSpec:
 
         Logging.subSection("Checking [[characters]]...")
         self.characters = []
-        self.characterValidKeys = ["name", "color", "relative_height", "font",
-                                   "font_bold", "font_italic", "font_bolditalic"]
+        self.characterValidKeys = ["name", "color", "relative_height", "stroke_width",
+                                   "stroke_color", "font", "font_bold", "font_italic",
+                                   "font_bolditalic"]
         characterRequiredKeys = ["name", "color", "font"]
         for i, character in enumerate(spec["characters"]):
             Logging.subSection(f"Checking character #{i+1}...", 2)
@@ -365,6 +366,14 @@ class UserSpec:
             "color" : {
                 "check" : UserSpec.checkColor
             },
+            "stroke_width" : {
+                "check" : partial(UserSpec.checkTypeAndMinVal, Number, 0, "gte"),
+                "default" : 0
+            },
+            "stroke_color" : {
+                "check" : UserSpec.checkColor,
+                "default" : "#000000FF"
+            },
             "font" : {
                 "check" : UserSpec.checkFile
             },
@@ -412,13 +421,23 @@ class UserSpec:
                 f.write("\n")
 
 class Font:
-    def __init__(self, path, height, color):
+    def __init__(self, path, height, color, stroke, strokeColor):
         self.font = ImageFont.truetype(path, height)
         self.height = height
         self.spaceLen = self.font.getlength(" ")
-        matches = UserSpec.rgbaRe.fullmatch(color)
-        self.rgba = (int(matches[1], 16), int(matches[2], 16),
-                    int(matches[3], 16), int(matches[4], 16))
+
+        fontColorMatches = UserSpec.rgbaRe.fullmatch(color)
+        self.rgba = (int(fontColorMatches[1], 16),
+                     int(fontColorMatches[2], 16),
+                     int(fontColorMatches[3], 16),
+                     int(fontColorMatches[4], 16))
+
+        self.stroke = stroke
+        strokeColorMatches = UserSpec.rgbaRe.fullmatch(strokeColor)
+        self.strokeRgba = (int(strokeColorMatches[1], 16),
+                           int(strokeColorMatches[2], 16),
+                           int(strokeColorMatches[3], 16),
+                           int(strokeColorMatches[4], 16))
 
     def getLength(self, text):
         return self.font.getlength(text)
@@ -431,6 +450,8 @@ class Font:
         return {
             "font" : self.font,
             "fill" : self.rgba,
+            "stroke_width" : self.stroke,
+            "stroke_fill" : self.strokeRgba
         }
 
 class FmtUnit:
@@ -473,11 +494,11 @@ def loadFonts(charSpecs, baseHeight):
     for charSpec in charSpecs:
         charFonts = {}
         for font in ["font", "font_bold", "font_italic", "font_bolditalic"]:
-            height = int(baseHeight * charSpec["relative_height"]["value"])
-            if height < 1:
-                height = 1
+            height = max(1, int(baseHeight * charSpec["relative_height"]["value"]))
+            stroke = int(baseHeight * charSpec["stroke_width"]["value"])
             charFonts[font] = Font(
-                charSpec[font]["value"], height, charSpec["color"]["value"])
+                charSpec[font]["value"], height, charSpec["color"]["value"],
+                stroke, charSpec["stroke_color"]["value"])
         fonts[charSpec["name"]["value"]] = charFonts
     return fonts
 
@@ -860,6 +881,7 @@ def drawCredits(d, capCredits, creditsPos, artX, artY, artWidth, artHeight):
 
     fontKwargs = font.imgDrawKwargs()
     fontKwargs.pop("fill")
+    fontKwargs.pop("stroke_fill")
 
     (_, _, creditsWidth, creditsHeight) = \
         d.multiline_textbbox((0, 0), capCredits, **fontKwargs)
