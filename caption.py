@@ -14,11 +14,11 @@ from PIL import Image, ImageDraw, ImageFont
 ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 
 # TODOs:
-#    - print nicer user error messages/distinguish user errors from logical errors
 #    - write up a guide
 #    - split program into multiple files
 #    - add option for text stroke size/color
 #    - add option to open image when the program finishes
+#    - fix credits
 
 # Debug printers
 def printFormatWords(fmtWords):
@@ -40,6 +40,15 @@ def printFormattedLines(fmtLines):
                 print(f"{unit.txt}:", end="")
             print(" ", end="")
         print()
+
+class UserError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    @staticmethod
+    def uassert(cond, message):
+        if not cond:
+            raise UserError(message)
 
 class Logging:
     width = 80
@@ -105,15 +114,15 @@ class UserSpec:
     def __init__(self, fileName):
         def checkKeys(actualKeys, validKeys, requiredKeys, internalColl={}):
             for actualKey in actualKeys:
-                assert actualKey in validKeys, \
-                    f"Unexpected option '{actualKey}', expected one of '{validKeys}'"
+                UserError.uassert( actualKey in validKeys,
+                    f"Unexpected option '{actualKey}', expected one of '{validKeys}'" )
                 internalColl[actualKey] = {}
                 internalColl[actualKey]["default"] = False
                 # Will be set to an actual value in a "validate*()" functions
                 internalColl[actualKey]["value"] = None
             for requiredKey in requiredKeys:
-                assert requiredKey in actualKeys, \
-                    f"Required option '{requiredKey}' not included"
+                UserError.uassert(requiredKey in actualKeys,
+                    f"Required option '{requiredKey}' not included")
             for defaultKey in (validKeys - internalColl.keys()):
                 internalColl[defaultKey] = {}
                 internalColl[defaultKey]["default"] = True
@@ -122,7 +131,7 @@ class UserSpec:
                 internalColl[defaultKey]["value"] = None
 
         Logging.header(f"Verifying specification file '{fileName}'")
-        assert Path(fileName).is_file(), f"File '{fileName}' does not exist"
+        UserError.uassert( Path(fileName).is_file(), f"File '{fileName}' does not exist" )
         with open(fileName, "r", encoding="utf-8") as f:
             spec = toml.load(f)
 
@@ -159,7 +168,6 @@ class UserSpec:
         self.characterValidKeys = ["name", "color", "relative_height", "font",
                                    "font_bold", "font_italic", "font_bolditalic"]
         characterRequiredKeys = ["name", "color", "font"]
-        assert len(spec["characters"]) > 0, "Must specify at least one character"
         for i, character in enumerate(spec["characters"]):
             Logging.subSection(f"Checking character #{i+1}...", 2)
             currChar = {}
@@ -170,42 +178,43 @@ class UserSpec:
         characterNames = [char["name"]["value"] for char in self.characters]
         for name in list(characterNames):
             characterNames.pop(0)
-            assert name not in characterNames, "Found multiple characters named " \
-                f"'{name}', cannot use the same name for multiple characters"
+            UserError.uassert(name not in characterNames, "Found multiple characters named " \
+                f"'{name}', cannot use the same name for multiple characters")
 
         Logging.subSection("Checking conflicts between headers...")
         imgHeightGiven = not self.image["image_height"]["default"]
         txtHeightGiven = not self.text["base_font_height"]["default"]
-        assert not (imgHeightGiven and txtHeightGiven), \
-            f"Cannot specify image_height and base_font_height together"
+        UserError.uassert(not (imgHeightGiven and txtHeightGiven),
+                          f"Cannot specify image_height and base_font_height together")
 
         artNotGiven = self.image["art"]["default"]
         if artNotGiven:
             outputs = self.output["outputs"]["value"]
-            assert outputs == "parts", "Cannot generate caption without art. " \
-                "Either specify 'art' under [image], or set 'outputs' to something " \
-                "other than 'parts' under [output]"
+            UserError.uassert(outputs == "parts", "Cannot generate caption without art. " \
+                "Either specify 'art' under [image], or set 'outputs' to 'parts' " \
+                "under [output]")
 
         Logging.subSection("Specification file is valid!", 1, "green")
 
     @staticmethod
-    def checkFileRe(coll, key):
+    def checkFile(coll, key):
         fileName = coll[key]
-        assert Path(fileName).is_file(), f"File '{fileName}' does not exist"
+        UserError.uassert(Path(fileName).is_file(), f"File '{fileName}' does not exist")
         return fileName
 
     @staticmethod
-    def checkTypeAndMinValRe(expType, minVal, cond, coll, key):
+    def checkTypeAndMinVal(expType, minVal, cond, coll, key):
         value = coll[key]
-        assert isinstance(value, expType), \
-            f"Expected {key} to be {expType}, got {type(value)}"
+        UserError.uassert(isinstance(value, expType), \
+            f"Expected {key} to be {expType}, got {type(value)}")
 
         assert cond in ["gt", "gte"]
         if cond == "gt":
-            assert value > minVal, f"{key} must be greater than {minVal}, got {value}"
+            UserError.uassert(
+                value > minVal, f"{key} must be greater than {minVal}, got {value}")
         elif cond == "gte":
-            assert value >= minVal, \
-                f"{key} must be greater than or equal to {minVal}, got {value}"
+            UserError.uassert(
+                value >= minVal, f"{key} must be greater than or equal to {minVal}, got {value}")
         return value
 
     @staticmethod
@@ -216,14 +225,14 @@ class UserSpec:
         elif UserSpec.rgbRe.fullmatch(value):
             value += "FF"
         else:
-            assert False, f"Invalid hex color {value}"
+            UserError.uassert(False, f"Invalid hex color {value}")
         return value
 
     @staticmethod
-    def valueInListRe(expList, coll, key):
+    def valueInList(expList, coll, key):
         value = coll[key]
-        assert value in expList, \
-            f"Invalid {key}, expected one of {expList}, got {value}"
+        UserError.uassert(value in expList,
+            f"Invalid '{key}', expected one of {expList}, got '{value}'")
         return value
 
     @staticmethod
@@ -240,10 +249,10 @@ class UserSpec:
     def validateAndSetImage(self, inImage):
         checkImage = {
             "art" : {
-                "check" : UserSpec.checkFileRe
+                "check" : UserSpec.checkFile
             },
             "image_height" : {
-                "check" : partial(UserSpec.checkTypeAndMinValRe, int, 0, "gt")
+                "check" : partial(UserSpec.checkTypeAndMinVal, int, 0, "gt")
             },
             "bg_color" : {
                 "check" : UserSpec.checkColor
@@ -254,37 +263,37 @@ class UserSpec:
     def validateAndSetText(self, inText):
         def checkCredits(coll, key):
             capCredits = coll[key]
-            assert isinstance(capCredits, list), \
-                f"Expected {capCredits} to be {list}, got {type(capCredits)}"
+            UserError.uassert(isinstance(capCredits, list),
+                f"Expected {capCredits} to be {list}, got {type(capCredits)}")
             for line in capCredits:
-                assert isinstance(line, str), \
-                    f"Expected line '{line}' to be {str}, got {type(line)}"
+                UserError.uassert(isinstance(line, str),
+                    f"Expected line {line} in credits to be {str}, got {type(line)}")
             return capCredits
 
         checkText = {
             "text" : {
-                "check" : UserSpec.checkFileRe
+                "check" : UserSpec.checkFile
             },
             "base_font_height" : {
-                "check" : partial(UserSpec.checkTypeAndMinValRe, int, 0, "gt"),
+                "check" : partial(UserSpec.checkTypeAndMinVal, int, 0, "gt"),
                 "default" : 16
             },
             "padding" : {
-                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gte"),
+                "check" : partial(UserSpec.checkTypeAndMinVal, Number, 0, "gte"),
                 "default" : 1
             },
             "line_spacing" : {
-                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gte"),
+                "check" : partial(UserSpec.checkTypeAndMinVal, Number, 0, "gte"),
                 "default" : 0.2
             },
             "text_width" : {
-                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gt"),
+                "check" : partial(UserSpec.checkTypeAndMinVal, Number, 0, "gt"),
             },
             "text_box_pos" : {
-                "check" : partial(UserSpec.valueInListRe, ["left", "right", "split"])
+                "check" : partial(UserSpec.valueInList, ["left", "right", "split"])
             },
             "alignment" : {
-                "check" : partial(UserSpec.valueInListRe, ["left", "right", "center"]),
+                "check" : partial(UserSpec.valueInList, ["left", "right", "center"]),
                 "default" : "center"
             },
             "credits" : {
@@ -292,7 +301,7 @@ class UserSpec:
                 "default" : []
             },
             "credits_pos" : {
-                "check" : partial(UserSpec.valueInListRe, ["tl", "tr", "bl", "br"]),
+                "check" : partial(UserSpec.valueInList, ["tl", "tr", "bl", "br"]),
                 "default" : "tl"
             }
         }
@@ -301,21 +310,21 @@ class UserSpec:
     def validateAndSetOutput(self, inOutput):
         def valueIsIntInRange(minVal, maxVal, coll, key):
             value = coll[key]
-            assert isinstance(value, int), \
-                f"Expected {key} to be {int}, got {type(value)}"
-            assert minVal <= value <= maxVal, \
-                f"{key} not in range [{minVal}, {maxVal}]"
+            UserError.uassert(isinstance(value, int),
+                f"Expected {key} to be {int}, got {type(value)}")
+            UserError.uassert(minVal <= value <= maxVal,
+                f"Value {value} for {key} not in range [{minVal}, {maxVal}]")
             return value
 
         def checkDirectory(coll, key):
             directory = coll[key]
-            assert Path(directory).is_dir(), \
-                f"Directory '{directory}' does not exist"
+            UserError.uassert(Path(directory).is_dir(),
+                f"Directory '{directory}' does not exist")
             return directory
 
         checkOutput = {
             "outputs" : {
-                "check" : partial(UserSpec.valueInListRe, ["caption", "parts", "all"]),
+                "check" : partial(UserSpec.valueInList, ["caption", "parts", "all"]),
                 "default" : "caption"
             },
             "output_directory" : {
@@ -323,7 +332,7 @@ class UserSpec:
                 "default" : ""
             },
             "output_img_format" : {
-                "check" : partial(UserSpec.valueInListRe, ["png", "jpg", "jpeg"]),
+                "check" : partial(UserSpec.valueInList, ["png", "jpg", "jpeg"]),
                 "default" : "png"
             },
             "output_img_quality" : {
@@ -341,8 +350,8 @@ class UserSpec:
             name = coll[key]
             specialChars = ["[", "]", "*", "_", " ", "\n"]
             for char in specialChars:
-                assert char not in name, \
-                    f"Special character '{char}' not allowed in name '{name}'"
+                UserError.uassert(char not in name,
+                    f"Special character '{char}' not allowed in name '{name}'")
             return name
 
         checkChar = {
@@ -350,25 +359,25 @@ class UserSpec:
                 "check" : verifyNoSpecialChars
             },
             "relative_height" : {
-                "check" : partial(UserSpec.checkTypeAndMinValRe, Number, 0, "gt"),
+                "check" : partial(UserSpec.checkTypeAndMinVal, Number, 0, "gt"),
                 "default" : 1
             },
             "color" : {
                 "check" : UserSpec.checkColor
             },
             "font" : {
-                "check" : UserSpec.checkFileRe
+                "check" : UserSpec.checkFile
             },
             "font_bold" : {
-                "check" : UserSpec.checkFileRe,
+                "check" : UserSpec.checkFile,
                 "default" : inChar["font"]
             },
             "font_italic" : {
-                "check" : UserSpec.checkFileRe,
+                "check" : UserSpec.checkFile,
                 "default" : inChar["font"]
             },
             "font_bolditalic" : {
-                "check" : UserSpec.checkFileRe,
+                "check" : UserSpec.checkFile,
                 "default" : inChar["font"]
             }
         }
@@ -472,6 +481,39 @@ def loadFonts(charSpecs, baseHeight):
         fonts[charSpec["name"]["value"]] = charFonts
     return fonts
 
+def gatherPeople(text, lBraces, rBraces, validPeople):
+    strRange = 10
+    (lBraces, rBraces) = (list(lBraces), list(rBraces))
+    people = []
+
+    while lBraces or rBraces:
+        if not lBraces:
+            val = rBraces[0]
+            strWindow = text[max(0,val-strRange):val+strRange]
+            UserError.uassert(
+                False, f"Unmatched ']' around \n'''\n...{strWindow}...\n'''")
+        if not rBraces:
+            val = lBraces[0]
+            strWindow = text[max(0,val-strRange):val+strRange]
+            UserError.uassert(
+                False, f"Unmatched '[' around \n'''\n...{strWindow}...\n'''")
+
+        (currL, currR) = (lBraces.pop(0), rBraces.pop(0))
+        if currL > currR:
+            valR = currR
+            strWindowR = text[max(0,valR-strRange):valR+strRange]
+            valL = currL
+            strWindowL = text[max(0,valL-strRange):valL+strRange]
+            UserError.uassert(
+                False, f"']' around \n'''\n...{strWindowR}...\n'''\n appeared before " \
+                f"'[' around \n'''\n...{strWindowL}...\n'''")
+
+        person = text[currL+1:currR]
+        UserError.uassert(person in validPeople, f"Unexpected character '{person}' " \
+                          f"in text file, expected one of {validPeople}")
+        people.append(person)
+    return people
+
 def parse_text(text):
     class FmtState:
         def __init__(self, font, bold, italic, person):
@@ -568,19 +610,9 @@ def parse_text(text):
             lastCharSlash = (char == "\\")
 
     # Assert that people specifers are valid and collect people
-    bracePairs = [pair for pair in zip(specialChars["["]["indices"],
-                                       specialChars["]"]["indices"])]
-    assert len(bracePairs) == len(specialChars["["]["indices"])  # Prevents "[]["
-    assert len(bracePairs) == len(specialChars["]"]["indices"])  # Prevents "[]]"
-    prevRBrace = -1
-    for lBrace, rBrace in bracePairs:
-        assert lBrace > prevRBrace  # Prevents "[[]]"
-        assert lBrace < rBrace      # Prevents "]["
-
-        person = text[lBrace+1:rBrace]
-        assert person in FONTS, f"Unexpected character '{person}' in text file"
-        specialChars["["]["people"].append(person)
-        prevRBrace = rBrace
+    specialChars["["]["people"] = gatherPeople(
+        text, specialChars["["]["indices"], specialChars["]"]["indices"],
+        list(FONTS.keys()))
 
     specialChars["["]["end_indices"] = specialChars["]"]["indices"]
     del specialChars["]"]
@@ -971,6 +1003,7 @@ def generateImages(textBoxes, art):
     bgColor = (int(matches[1], 16), int(matches[2], 16),
                int(matches[3], 16), int(matches[4], 16))
 
+    outputs = SPEC.output["outputs"]["value"]
     imgQuality = SPEC.output["output_img_quality"]["value"]
     baseFilename = SPEC.output["base_filename"]["value"]
     directory = SPEC.output["output_directory"]["value"]
@@ -979,48 +1012,49 @@ def generateImages(textBoxes, art):
     outputFmt = SPEC.output["output_img_format"]["value"]
 
     # Generate filled in TOML file
-    specFilename = directory + baseFilename + "_filledspec.toml"
+    specFilename = directory + baseFilename + "_autospec.toml"
+    Logging.subSection(f"Generating filled-in specification '{specFilename}'")
     SPEC.outputFilledSpec(specFilename)
-    Logging.subSection(f"Generated filled-in specification '{specFilename}'")
     fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename)))
 
     # Generate caption
-    if SPEC.output["outputs"]["value"] in ["all", "caption"]:
+    if outputs in ["all", "caption"]:
         capFile = directory + baseFilename + "_cap." + outputFmt
+        Logging.subSection(f"Generating caption '{capFile}'")
         generateCaption(textBoxes, textBoxPos, textAlignment,
                         capCredits, creditsPos, art, capFile, bgColor)
-        Logging.subSection(f"Generated caption '{capFile}'")
         fileSizeTable.append((capFile, Logging.filesizeStr(capFile)))
 
     # Generate parts
     colorMode = "RGBA" if outputFmt == "png" else "RGB"
-    if SPEC.output["outputs"]["value"] in ["all", "parts"]:
+    if outputs in ["all", "parts"]:
         for i, box in enumerate(textBoxes):
             renderedTextFile = directory + baseFilename + f"_text{i}." + outputFmt
+            Logging.subSection(f"Generating text-only image '{renderedTextFile}'")
             img = Image.new(colorMode, (box.width, box.height), bgColor)
             box.drawText(ImageDraw.Draw(img), textAlignment)
             img.save(renderedTextFile, optimize=True, quality=imgQuality)
-            Logging.subSection(f"Generated text-only image '{renderedTextFile}'")
             fileSizeTable.append((renderedTextFile, Logging.filesizeStr(renderedTextFile)))
 
-        artFile = directory + baseFilename + "_art." + outputFmt
-        img = Image.new(colorMode, (art.width, art.height), bgColor)
-        img.paste(art, (0, 0))
-        img.save(artFile, optimize=True, quality=imgQuality)
-        Logging.subSection(f"Generated rescaled art '{artFile}'")
-        fileSizeTable.append((artFile, Logging.filesizeStr(artFile)))
+        if outputs != "parts":
+            artFile = directory + baseFilename + "_art." + outputFmt
+            Logging.subSection(f"Generating rescaled art '{artFile}'")
+            img = Image.new(colorMode, (art.width, art.height), bgColor)
+            img.paste(art, (0, 0))
+            img.save(artFile, optimize=True, quality=imgQuality)
+            fileSizeTable.append((artFile, Logging.filesizeStr(artFile)))
 
-        if SPEC.text["credits"]["value"] == []:
+        if capCredits == '':
             Logging.subSection("Successfully generated all images!", 1, "green")
             Logging.table(fileSizeTable)
             return
 
         creditsFile = directory + baseFilename + "_credits." + outputFmt
+        Logging.subSection(f"Generating credits '{creditsFile}'")
         img = Image.new(colorMode, (art.width, art.height), bgColor)
         drawCredits(ImageDraw.Draw(img), capCredits, creditsPos, 0, 0,
                     art.width, art.height)
         img.save(creditsFile, optimize=True, quality=imgQuality)
-        Logging.subSection(f"Generated credits '{creditsFile}'")
         fileSizeTable.append((creditsFile, Logging.filesizeStr(creditsFile)))
     Logging.subSection("Successfully generated all images!", 1, "green")
     Logging.table(fileSizeTable)
@@ -1071,10 +1105,14 @@ def main():
 if __name__ == "__main__":
     colorama.init()
     START_TIME = time.time()
-    assert len(sys.argv) == 2, "Must specify exactly one parameter: the specification " \
-        "file for your caption"
-    SPEC = UserSpec(sys.argv[1])
-    FONTS = loadFonts(SPEC.characters, SPEC.text["base_font_height"]["value"])
-    main()
-    Logging.header(f"Program finished in {time.time()-START_TIME:.2f} seconds")
-    Logging.divider()
+    try:
+        UserError.uassert(len(sys.argv) == 2, "Must specify exactly one argument: " \
+                          "the specification file for your caption")
+        SPEC = UserSpec(sys.argv[1])
+        FONTS = loadFonts(SPEC.characters, SPEC.text["base_font_height"]["value"])
+        main()
+        Logging.header(f"Program finished in {time.time()-START_TIME:.2f} seconds")
+        Logging.divider()
+    except UserError as e:
+        Logging.divider()
+        print(f"\nUserError: {e.message}")
