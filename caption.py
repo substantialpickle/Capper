@@ -1,12 +1,15 @@
+import argparse
 import colorama
 from functools import partial
 from termcolor import cprint
 import time
 import toml
 from numbers import Number
+import os
 from pathlib import Path
 import pdb
 import re
+import subprocess
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
@@ -16,7 +19,6 @@ ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 # TODOs:
 #    - write up a guide
 #    - split program into multiple files
-#    - add option to open image when the program finishes
 #    - fix credits
 
 # Debug printers
@@ -1063,6 +1065,11 @@ def generateImages(textBoxes, art):
         fileSizeTable.append((capFile,
                               Logging.filesizeStr(capFile),
                               Logging.dimensionsStr(capFile)))
+        if args.open_on_exit:
+            imageViewerFromCommandLine = {'linux':'xdg-open',
+                                          'win32':'explorer',
+                                          'darwin':'open'}[sys.platform]
+            subprocess.run([imageViewerFromCommandLine, os.path.abspath(capFile)])
 
     # Generate parts
     colorMode = "RGBA" if outputFmt == "png" else "RGB"
@@ -1148,12 +1155,22 @@ def main():
     generateImages(textBoxes, art)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="CaptionGenerator",
+        description="Generate a caption given a vaild .toml specification file",
+        epilog="Have fun writing!")
+    parser.add_argument("specification_file", help="The specification for your " \
+                        "caption. See the GitHub page for a guide on how it must " \
+                        "be formatted.")
+    parser.add_argument("-o", "--open_on_exit", action="store_true", help="If a " \
+                        "caption is generated, open it with your default image " \
+                        "viewer.")
+    args = parser.parse_args()
+
     colorama.init()
     START_TIME = time.time()
     try:
-        UserError.uassert(len(sys.argv) == 2, "Must specify exactly one argument: " \
-                          "the specification file for your caption")
-        SPEC = UserSpec(sys.argv[1])
+        SPEC = UserSpec(args.specification_file)
         FONTS = loadFonts(SPEC.characters, SPEC.text["base_font_height"]["value"])
         main()
         Logging.header(f"Program finished in {time.time()-START_TIME:.2f} seconds")
