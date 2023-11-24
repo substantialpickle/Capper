@@ -98,8 +98,8 @@ class Logging:
         print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
         for row in tableStrs:
             rowStr = "| "
-            for (coll, collLen) in zip(row, collLens):
-                align = ">" if any(c.isdigit() for c in coll) else "<"
+            for i, (coll, collLen) in enumerate(zip(row, collLens)):
+                align = "<" if i == 0 else ">"
                 rowStr += f"{coll:{align}{collLen-2}} | "
             print(f"| {'': >{Logging.tab * levels}}{rowStr:<{usable}} |")
         print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
@@ -113,6 +113,11 @@ class Logging:
                 sizeBytes = sizeBytes / 1024
             else:
                 return f"{sizeBytes:.2f} {unit:>2}"
+
+    @staticmethod
+    def dimensionsStr(imgname):
+        img = Image.open(imgname)
+        return f"{img.width}x{img.height} px"
 
 class UserSpec:
     rgbaRe = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])"
@@ -1047,7 +1052,7 @@ def generateImages(textBoxes, art):
     specFilename = directory + baseFilename + "_autospec.toml"
     Logging.subSection(f"Generating filled-in specification '{specFilename}'")
     SPEC.outputFilledSpec(specFilename)
-    fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename)))
+    fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename), ""))
 
     # Generate caption
     if outputs in ["all", "caption"]:
@@ -1055,7 +1060,9 @@ def generateImages(textBoxes, art):
         Logging.subSection(f"Generating caption '{capFile}'")
         generateCaption(textBoxes, textBoxPos, textAlignment,
                         capCredits, creditsPos, art, capFile, bgColor)
-        fileSizeTable.append((capFile, Logging.filesizeStr(capFile)))
+        fileSizeTable.append((capFile,
+                              Logging.filesizeStr(capFile),
+                              Logging.dimensionsStr(capFile)))
 
     # Generate parts
     colorMode = "RGBA" if outputFmt == "png" else "RGB"
@@ -1066,7 +1073,9 @@ def generateImages(textBoxes, art):
             img = Image.new(colorMode, (box.width, box.height), bgColor)
             box.drawText(ImageDraw.Draw(img), textAlignment)
             img.save(renderedTextFile, optimize=True, quality=imgQuality)
-            fileSizeTable.append((renderedTextFile, Logging.filesizeStr(renderedTextFile)))
+            fileSizeTable.append((renderedTextFile,
+                                  Logging.filesizeStr(renderedTextFile),
+                                  Logging.dimensionsStr(renderedTextFile)))
 
         if outputs != "parts":
             artFile = directory + baseFilename + "_art." + outputFmt
@@ -1074,7 +1083,9 @@ def generateImages(textBoxes, art):
             img = Image.new(colorMode, (art.width, art.height), bgColor)
             img.paste(art, (0, 0))
             img.save(artFile, optimize=True, quality=imgQuality)
-            fileSizeTable.append((artFile, Logging.filesizeStr(artFile)))
+            fileSizeTable.append((artFile,
+                                  Logging.filesizeStr(artFile),
+                                  Logging.dimensionsStr(artFile)))
 
         if capCredits == '':
             Logging.subSection("Successfully generated all images!", 1, "green")
@@ -1087,7 +1098,9 @@ def generateImages(textBoxes, art):
         drawCredits(ImageDraw.Draw(img), capCredits, creditsPos, 0, 0,
                     art.width, art.height)
         img.save(creditsFile, optimize=True, quality=imgQuality)
-        fileSizeTable.append((creditsFile, Logging.filesizeStr(creditsFile)))
+        fileSizeTable.append((creditsFile,
+                              Logging.filesizeStr(creditsFile),
+                              Logging.dimensionsStr(creditsFile)))
     Logging.subSection("Successfully generated all images!", 1, "green")
     Logging.table(fileSizeTable)
 
