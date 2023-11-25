@@ -19,7 +19,6 @@ ceil = lambda i : int(i) if int(i) == i else int(i + 1)
 # TODOs:
 #    - write up a guide
 #    - split program into multiple files
-#    - fix credits
 
 # Debug printers
 def printFormatWords(fmtWords):
@@ -127,9 +126,8 @@ class UserSpec:
                          re.IGNORECASE)
     rgbRe = re.compile("#([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])([0-9A-F][0-9A-F])",
                          re.IGNORECASE)
-
-    def __init__(self, fileName):
-        def checkKeys(actualKeys, validKeys, requiredKeys, internalColl={}):
+    @staticmethod
+    def checkKeys(actualKeys, validKeys, requiredKeys, internalColl={}):
             for actualKey in actualKeys:
                 UserError.uassert( actualKey in validKeys,
                     f"Unexpected option '{actualKey}', expected one of '{validKeys}'" )
@@ -147,6 +145,7 @@ class UserSpec:
                 # later stage in the program after the text has been parsed.
                 internalColl[defaultKey]["value"] = None
 
+    def __init__(self, fileName):
         Logging.header(f"Verifying specification file '{fileName}'")
         UserError.uassert( Path(fileName).is_file(), f"File '{fileName}' does not exist" )
         with open(fileName, "r", encoding="utf-8") as f:
@@ -154,13 +153,13 @@ class UserSpec:
 
         Logging.subSection("Checking top level headers...")
         topLevelKeys = ["image", "text", "output", "characters"]
-        checkKeys(spec.keys(), topLevelKeys, topLevelKeys)
+        self.checkKeys(spec.keys(), topLevelKeys, topLevelKeys)
 
         Logging.subSection("Checking [image]...")
         self.image = {}
         self.imageValidKeys = ["art", "image_height", "bg_color"]
         imageRequiredKeys = ["bg_color"]
-        checkKeys(spec["image"], self.imageValidKeys, imageRequiredKeys, self.image)
+        self.checkKeys(spec["image"], self.imageValidKeys, imageRequiredKeys, self.image)
         self.validateAndSetImage(spec["image"])
 
         Logging.subSection("Checking [text]...")
@@ -169,7 +168,7 @@ class UserSpec:
                               "text_width", "text_box_pos", "alignment", "credits",
                               "credits_pos"]
         textRequiredKeys = ["text", "text_box_pos"]
-        checkKeys(spec["text"], self.textValidKeys, textRequiredKeys, self.text)
+        self.checkKeys(spec["text"], self.textValidKeys, textRequiredKeys, self.text)
         self.validateAndSetText(spec["text"])
 
         Logging.subSection("Checking [output]...")
@@ -177,7 +176,7 @@ class UserSpec:
         self.outputValidKeys = ["outputs", "output_directory", "output_img_format",
                                 "output_img_quality", "base_filename"]
         outputRequiredKeys = ["base_filename"]
-        checkKeys(spec["output"], self.outputValidKeys, outputRequiredKeys, self.output)
+        self.checkKeys(spec["output"], self.outputValidKeys, outputRequiredKeys, self.output)
         self.validateAndSetOutput(spec["output"])
 
         Logging.subSection("Checking [[characters]]...")
@@ -185,11 +184,11 @@ class UserSpec:
         self.characterValidKeys = ["name", "color", "relative_height", "stroke_width",
                                    "stroke_color", "font", "font_bold", "font_italic",
                                    "font_bolditalic"]
-        characterRequiredKeys = ["name", "color", "font"]
+        self.characterRequiredKeys = ["name", "color", "font"]
         for i, character in enumerate(spec["characters"]):
             Logging.subSection(f"Checking character #{i+1}...", 2)
             currChar = {}
-            checkKeys(character, self.characterValidKeys, characterRequiredKeys, currChar)
+            self.checkKeys(character, self.characterValidKeys, self.characterRequiredKeys, currChar)
             self.validateAndSetChar(character, currChar)
             self.characters.append(currChar)
 
@@ -208,9 +207,9 @@ class UserSpec:
         artNotGiven = self.image["art"]["default"]
         if artNotGiven:
             outputs = self.output["outputs"]["value"]
-            UserError.uassert(outputs == "parts", "Cannot generate caption without art. " \
-                "Either specify 'art' under [image], or set 'outputs' to 'parts' " \
-                "under [output]")
+            UserError.uassert(outputs != "caption", "Cannot generate caption without art. " \
+                "Either specify 'art' under [image], or set 'outputs' to anything other " \
+                "than 'caption' under [output]")
 
         Logging.subSection("Specification file is valid!", 1, "green")
 
@@ -415,12 +414,16 @@ class UserSpec:
                 if data[key]["default"] == False:
                     if isinstance(data[key]["value"], str):
                         f.write(f"{key} = \"{data[key]['value']}\"\n")
+                    elif isinstance(data[key]["value"], float):
+                        f.write(f"{key} = {data[key]['value']:.3f}\n")
                     else:
                         f.write(f"{key} = {data[key]['value']}\n")
             for key in orderedKeys:
                 if data[key]["default"] == True:
                     if isinstance(data[key]["value"], str):
                         f.write(f"# {key} = \"{data[key]['value']}\"\n")
+                    elif isinstance(data[key]["value"], float):
+                        f.write(f"# {key} = {data[key]['value']:.3f}\n")
                     else:
                         f.write(f"# {key} = {data[key]['value']}\n")
 
@@ -439,11 +442,13 @@ class UserSpec:
 
 class Font:
     def __init__(self, path, height, color, stroke, strokeColor):
+        self.path = path
         self.font = ImageFont.truetype(path, height)
         self.height = height
         self.spaceLen = self.font.getlength(" ")
 
         fontColorMatches = UserSpec.rgbaRe.fullmatch(color)
+        self.color = color
         self.rgba = (int(fontColorMatches[1], 16),
                      int(fontColorMatches[2], 16),
                      int(fontColorMatches[3], 16),
@@ -887,14 +892,31 @@ class TextBox:
             (x, y) = (startX + self.padding, y + self.lineSpacing)
 
 def drawCredits(d, capCredits, creditsPos, artX, artY, artWidth, artHeight):
-    padding = int(SPEC.text["padding"]["value"] *
-                  SPEC.text["base_font_height"]["value"])
+    if capCredits == "":
+        return
+
+    padding = ceil(artHeight * 0.02)
 
     if "credits" in FONTS:
         font = FONTS["credits"]["font"]
     else:
-        firstPerson = SPEC.characters[0]["name"]["value"]
-        font = FONTS[firstPerson]["font"]
+        baseFont = FONTS[SPEC.characters[0]["name"]["value"]]["font"]
+        font = Font(baseFont.path, padding, baseFont.color, 0, "#00000000")
+        FONTS["credits"] = {}
+        FONTS["credits"]["font"] = font
+        creditsChar = {}
+        creditsCharSpec = {
+            "name" : "credits",
+            "color" : baseFont.color,
+            "font" : baseFont.path,
+            "relative_height" : padding/SPEC.text["base_font_height"]["value"]
+        }
+        UserSpec.checkKeys(creditsCharSpec,
+                           SPEC.characterValidKeys,
+                           SPEC.characterRequiredKeys,
+                           creditsChar)
+        SPEC.validateAndSetChar(creditsCharSpec, creditsChar)
+        SPEC.characters.append(creditsChar)
 
     fontKwargs = font.imgDrawKwargs()
     fontKwargs.pop("fill")
@@ -1050,14 +1072,8 @@ def generateImages(textBoxes, art):
         directory += "/"
     outputFmt = SPEC.output["output_img_format"]["value"]
 
-    # Generate filled in TOML file
-    specFilename = directory + baseFilename + "_autospec.toml"
-    Logging.subSection(f"Generating filled-in specification '{specFilename}'")
-    SPEC.outputFilledSpec(specFilename)
-    fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename), ""))
-
     # Generate caption
-    if outputs in ["all", "caption"]:
+    if outputs in ["all", "caption"] and SPEC.image["art"]["value"] is not None:
         capFile = directory + baseFilename + "_cap." + outputFmt
         Logging.subSection(f"Generating caption '{capFile}'")
         generateCaption(textBoxes, textBoxPos, textAlignment,
@@ -1084,7 +1100,7 @@ def generateImages(textBoxes, art):
                                   Logging.filesizeStr(renderedTextFile),
                                   Logging.dimensionsStr(renderedTextFile)))
 
-        if outputs != "parts":
+        if SPEC.image["art"]["value"] is not None:
             artFile = directory + baseFilename + "_art." + outputFmt
             Logging.subSection(f"Generating rescaled art '{artFile}'")
             img = Image.new(colorMode, (art.width, art.height), bgColor)
@@ -1094,20 +1110,23 @@ def generateImages(textBoxes, art):
                                   Logging.filesizeStr(artFile),
                                   Logging.dimensionsStr(artFile)))
 
-        if capCredits == '':
-            Logging.subSection("Successfully generated all images!", 1, "green")
-            Logging.table(fileSizeTable)
-            return
+        if capCredits != '' and SPEC.image["art"]["value"] is not None:
+            creditsFile = directory + baseFilename + "_credits." + outputFmt
+            Logging.subSection(f"Generating credits '{creditsFile}'")
+            img = Image.new(colorMode, (art.width, art.height), bgColor)
+            drawCredits(ImageDraw.Draw(img), capCredits, creditsPos, 0, 0,
+                        art.width, art.height)
+            img.save(creditsFile, optimize=True, quality=imgQuality)
+            fileSizeTable.append((creditsFile,
+                                  Logging.filesizeStr(creditsFile),
+                                  Logging.dimensionsStr(creditsFile)))
 
-        creditsFile = directory + baseFilename + "_credits." + outputFmt
-        Logging.subSection(f"Generating credits '{creditsFile}'")
-        img = Image.new(colorMode, (art.width, art.height), bgColor)
-        drawCredits(ImageDraw.Draw(img), capCredits, creditsPos, 0, 0,
-                    art.width, art.height)
-        img.save(creditsFile, optimize=True, quality=imgQuality)
-        fileSizeTable.append((creditsFile,
-                              Logging.filesizeStr(creditsFile),
-                              Logging.dimensionsStr(creditsFile)))
+    # Generate filled in TOML file
+    specFilename = directory + baseFilename + "_autospec.toml"
+    Logging.subSection(f"Generating filled-in specification '{specFilename}'")
+    SPEC.outputFilledSpec(specFilename)
+    fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename), ""))
+
     Logging.subSection("Successfully generated all images!", 1, "green")
     Logging.table(fileSizeTable)
 
