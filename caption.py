@@ -1138,7 +1138,9 @@ def main():
     with open(SPEC.text["text"]["value"], "r",encoding="utf-8") as f:
         text = f.read()
     fmtWords = parse_text(text)
-    textInfoTable.append(("Word Count", len(fmtWords)))
+
+    textInfoTable.append(
+        ("Word Count", sum([1 for word in fmtWords if word.fmtUnits != []])))
 
     textBoxPos = SPEC.text["text_box_pos"]["value"]
     if SPEC.text["text_width"]["default"]:
