@@ -67,13 +67,11 @@ def drawCredits(d, capCredits, creditsPos, artX, artY, artWidth, artHeight):
     if capCredits == "":
         return
 
-    padding = ceil(artHeight * 0.02)
-
     if "credits" in FONTS:
         font = FONTS["credits"]["font"]
     else:
         baseFont = FONTS[SPEC.characters[0]["name"]["value"]]["font"]
-        font = Font(baseFont.path, padding, baseFont.color, 0, "#00000000")
+        font = Font(baseFont.path, ceil(artHeight * 0.02), baseFont.color, 0, "#00000000")
         FONTS["credits"] = {}
         FONTS["credits"]["font"] = font
         creditsChar = {}
@@ -81,7 +79,7 @@ def drawCredits(d, capCredits, creditsPos, artX, artY, artWidth, artHeight):
             "name" : "credits",
             "color" : baseFont.color,
             "font" : baseFont.path,
-            "relative_height" : padding/SPEC.text["base_font_height"]["value"]
+            "relative_height" : font.height/SPEC.text["base_font_height"]["value"]
         }
         UserSpec.checkKeys(creditsCharSpec,
                            SPEC.characterValidKeys,
@@ -89,6 +87,8 @@ def drawCredits(d, capCredits, creditsPos, artX, artY, artWidth, artHeight):
                            creditsChar)
         SPEC.validateAndSetChar(creditsCharSpec, creditsChar)
         SPEC.characters.append(creditsChar)
+
+    padding = font.height
 
     fontKwargs = font.imgDrawKwargs()
     fontKwargs.pop("fill")
