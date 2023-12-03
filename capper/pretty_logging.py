@@ -3,8 +3,7 @@ from PIL import Image
 from termcolor import cprint
 
 class Logging:
-    width = 80
-    baseUsable = width - 4
+    width = 5
     tab = 8
 
     @staticmethod
@@ -14,14 +13,12 @@ class Logging:
     @staticmethod
     def header(text):
         Logging.divider()
-        cprint(f"| {text:<{Logging.baseUsable}} |", attrs=["bold"])
+        cprint(f"| {text}", attrs=["bold"])
 
     @staticmethod
     def subSection(text, levels=1, color="cyan"):
         print("| ", end="")
-        usable = Logging.baseUsable - (Logging.tab * levels)
-        cprint(f"{'': >{Logging.tab * levels}}{text:<{usable}}", color, end="")
-        print(" |")
+        cprint(f"{'': >{Logging.tab * levels}}{text}", color)
 
     @staticmethod
     def table(table, levels=1):
@@ -45,17 +42,16 @@ class Logging:
         tableEdge = "+"
         for length in collLens:
             tableEdge += f"{'':->{length}}+"
-        usable = Logging.baseUsable - (Logging.tab * levels)
 
-        print(f"| {'': >{Logging.baseUsable}} |")
-        print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
+        print("|")
+        print(f"| {'': >{Logging.tab * levels}}{tableEdge}")
         for row in tableStrs:
             rowStr = "| "
             for i, (coll, collLen) in enumerate(zip(row, collLens)):
                 align = "<" if i == 0 else ">"
                 rowStr += f"{coll:{align}{collLen-2}} | "
-            print(f"| {'': >{Logging.tab * levels}}{rowStr:<{usable}} |")
-        print(f"| {'': >{Logging.tab * levels}}{tableEdge:<{usable}} |")
+            print(f"| {'': >{Logging.tab * levels}}{rowStr}")
+        print(f"| {'': >{Logging.tab * levels}}{tableEdge}")
 
     @staticmethod
     def filesizeStr(filename):
