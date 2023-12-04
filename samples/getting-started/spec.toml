@@ -20,9 +20,6 @@ outputs = ["caption", "autospec"]
 name = "serif"
 color = "#F0C7C2"
 font = "fonts/Noto_Serif/NotoSerif-Regular.ttf"
-font_bold = "fonts/Noto_Serif/NotoSerif-Bold.ttf"
-font_italic = "fonts/Noto_Serif/NotoSerif-Italic.ttf"
-font_bolditalic = "fonts/Noto_Serif/NotoSerif-BoldItalic.ttf"
 
 [[characters]]
 name = "sans"

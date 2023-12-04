@@ -272,6 +272,14 @@ class UserSpec:
                     f"Special character '{char}' not allowed in name '{name}'")
             return name
 
+        def findFontFromDefault(default, fileSuffix):
+            parentDir = Path(default).parent
+            for f in parentDir.rglob("*"):
+                fileName = f.as_posix()
+                if fileName.lower()[len(fileName)-len(fileSuffix):] == fileSuffix.lower():
+                    return fileName
+            return default
+
         checkChar = {
             "name" : {
                 "check" : verifyNoSpecialChars
@@ -296,15 +304,15 @@ class UserSpec:
             },
             "font_bold" : {
                 "check" : UserSpec.checkFile,
-                "default" : inChar["font"]
+                "default" : findFontFromDefault(inChar["font"], "-Bold.ttf")
             },
             "font_italic" : {
                 "check" : UserSpec.checkFile,
-                "default" : inChar["font"]
+                "default" : findFontFromDefault(inChar["font"], "-Italic.ttf")
             },
             "font_bolditalic" : {
                 "check" : UserSpec.checkFile,
-                "default" : inChar["font"]
+                "default" : findFontFromDefault(inChar["font"], "-BoldItalic.ttf")
             }
         }
         UserSpec.validateAndFillSpec(inChar, storedChar, checkChar)
