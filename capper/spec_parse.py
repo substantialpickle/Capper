@@ -91,11 +91,14 @@ class UserSpec:
                           f"Cannot specify image_height and base_font_height together")
 
         artNotGiven = self.image["art"]["default"]
-        if artNotGiven:
-            outputs = self.output["outputs"]["value"]
+        if artNotGiven and "caption" in outputs:
             UserError.uassert(outputs != "caption", "Cannot generate caption without art. " \
-                "Either specify 'art' under [image], or set 'outputs' to anything other " \
-                "than 'caption' under [output]")
+                "Either specify 'art' under [image], or remove 'caption' from list 'outputs'")
+
+        if artNotGiven and "art" in outputs:
+            UserError.uassert(outputs != "caption", "Cannot generate rescaled art " \
+                "without art. Either specify 'art' under [image], or remove 'art' " \
+                "from list 'outputs'")
 
         Logging.subSection("Specification file is valid!", 1, "green")
 
@@ -225,10 +228,22 @@ class UserSpec:
                 f"Directory '{directory}' does not exist")
             return directory
 
+        def checkOutputs(coll, key):
+            outputs = coll[key]
+            outputTypes = ["caption", "text", "autospec", "credits", "art"]
+            UserError.uassert(isinstance(outputs, list),
+                f"Expected {outputs} to be {list}, got {type(outputs)}")
+            for output in outputs:
+                UserError.uassert(isinstance(output, str),
+                    f"Expected output {output} in 'outputs' to be {str}, got {type(output)}")
+                UserError.uassert(output in outputTypes, "Expected the list 'outputs' to "
+                                  f"contain one of {outputTypes}, got '{output}'")
+            return outputs
+
         checkOutput = {
             "outputs" : {
-                "check" : partial(UserSpec.valueInList, ["caption", "parts", "all"]),
-                "default" : "caption"
+                "check" : checkOutputs,
+                "default" : ["caption"]
             },
             "output_directory" : {
                 "check" : checkDirectory,

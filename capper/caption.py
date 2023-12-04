@@ -11,9 +11,6 @@ from pretty_logging import Logging, UserError
 from spec_parse import UserSpec
 from text import parseText, wrapRegions, TextBox
 
-# TODOs:
-#    - write up a guide
-
 class Font:
     def __init__(self, path, height, color, stroke, strokeColor):
         self.path = path
@@ -222,7 +219,7 @@ def generateCaption(textBoxes, textBoxPos, textAlignment, capCredits,
 
     img.save(fileName, optimize=True, quality=SPEC.output["output_img_quality"]["value"])
 
-def generateImages(textBoxes, art):
+def generateOutputs(textBoxes, art):
     Logging.header("Generating images")
     fileSizeTable = []
 
@@ -244,8 +241,7 @@ def generateImages(textBoxes, art):
         directory += "/"
     outputFmt = SPEC.output["output_img_format"]["value"]
 
-    # Generate caption
-    if outputs in ["all", "caption"] and SPEC.image["art"]["value"] is not None:
+    if "caption" in outputs:
         capFile = directory + baseFilename + "_cap." + outputFmt
         Logging.subSection(f"Generating caption '{capFile}'")
         generateCaption(textBoxes, textBoxPos, textAlignment,
@@ -259,9 +255,9 @@ def generateImages(textBoxes, art):
                                           'darwin':'open'}[sys.platform]
             subprocess.run([imageViewerFromCommandLine, os.path.abspath(capFile)])
 
-    # Generate parts
     colorMode = "RGBA" if outputFmt == "png" else "RGB"
-    if outputs in ["all", "parts"]:
+
+    if "text" in outputs:
         for i, box in enumerate(textBoxes):
             renderedTextFile = directory + baseFilename + f"_text{i}." + outputFmt
             Logging.subSection(f"Generating text-only image '{renderedTextFile}'")
@@ -272,6 +268,7 @@ def generateImages(textBoxes, art):
                                   Logging.filesizeStr(renderedTextFile),
                                   Logging.dimensionsStr(renderedTextFile)))
 
+    if "art" in outputs:
         if SPEC.image["art"]["value"] is not None:
             artFile = directory + baseFilename + "_art." + outputFmt
             Logging.subSection(f"Generating rescaled art '{artFile}'")
@@ -282,6 +279,7 @@ def generateImages(textBoxes, art):
                                   Logging.filesizeStr(artFile),
                                   Logging.dimensionsStr(artFile)))
 
+    if "credits" in outputs:
         if capCredits != '' and SPEC.image["art"]["value"] is not None:
             creditsFile = directory + baseFilename + "_credits." + outputFmt
             Logging.subSection(f"Generating credits '{creditsFile}'")
@@ -293,11 +291,11 @@ def generateImages(textBoxes, art):
                                   Logging.filesizeStr(creditsFile),
                                   Logging.dimensionsStr(creditsFile)))
 
-    # Generate filled in TOML file
-    specFilename = directory + baseFilename + "_autospec.toml"
-    Logging.subSection(f"Generating filled-in specification '{specFilename}'")
-    SPEC.outputFilledSpec(specFilename)
-    fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename), ""))
+    if "autospec" in outputs:
+        specFilename = directory + baseFilename + "_autospec.toml"
+        Logging.subSection(f"Generating filled-in specification '{specFilename}'")
+        SPEC.outputFilledSpec(specFilename)
+        fileSizeTable.append((specFilename, Logging.filesizeStr(specFilename), ""))
 
     Logging.subSection("Successfully generated all images!", 1, "green")
     Logging.table(fileSizeTable)
@@ -347,7 +345,7 @@ def main():
 
     Logging.subSection("Successfully manipulated text!", 1, "green")
     Logging.table(textInfoTable)
-    generateImages(textBoxes, art)
+    generateOutputs(textBoxes, art)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

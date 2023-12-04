@@ -14,6 +14,7 @@ credits = [
 [output]
 base_filename = "test"
 output_directory = "samples/getting-started"
+outputs = ["caption", "autospec"]
 
 [[characters]]
 name = "serif"
