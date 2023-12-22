@@ -300,6 +300,10 @@ def generateOutputs(textBoxes, art):
     Logging.subSection("Successfully generated all images!", 1, "green")
     Logging.table(fileSizeTable)
 
+    if args.spec_to_stdout:
+        Logging.header("Outputting autospec")
+        SPEC.outputFilledSpec()
+
 def main():
     textInfoTable = []
     baseFontHeight = SPEC.text["base_font_height"]["value"]
@@ -358,6 +362,9 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--open_on_exit", action="store_true", help="If a " \
                         "caption is generated, open it with your default image " \
                         "viewer.")
+    parser.add_argument("-s", "--spec_to_stdout", action="store_true", help="Output " \
+                        "the complete specification, with all automatically filled " \
+                        "values, to the terminal.")
     args = parser.parse_args()
 
     colorama.init()

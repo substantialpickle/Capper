@@ -3,6 +3,7 @@ import toml
 from numbers import Number
 from pathlib import Path
 import re
+import sys
 
 from pretty_logging import Logging, UserError
 
@@ -317,7 +318,7 @@ class UserSpec:
         }
         UserSpec.validateAndFillSpec(inChar, storedChar, checkChar)
 
-    def outputFilledSpec(self, specFilename):
+    def outputFilledSpec(self, specFilename=None):
         def writeSection(f, data, orderedKeys):
             for key in orderedKeys:
                 if data[key]["default"] == False:
@@ -336,15 +337,18 @@ class UserSpec:
                     else:
                         f.write(f"# {key} = {data[key]['value']}\n")
 
-        with open(specFilename, "w") as f:
-            f.write("[image]\n")
-            writeSection(f, self.image, self.imageValidKeys)
-            f.write("\n[text]\n")
-            writeSection(f, self.text, self.textValidKeys)
-            f.write("\n[output]\n")
-            writeSection(f, self.output, self.outputValidKeys)
+        f = sys.stdout if specFilename is None else open(specFilename, "w")
+        f.write("[image]\n")
+        writeSection(f, self.image, self.imageValidKeys)
+        f.write("\n[text]\n")
+        writeSection(f, self.text, self.textValidKeys)
+        f.write("\n[output]\n")
+        writeSection(f, self.output, self.outputValidKeys)
+        f.write("\n")
+        for char in self.characters:
+            f.write("[[characters]]\n")
+            writeSection(f, char, self.characterValidKeys)
             f.write("\n")
-            for char in self.characters:
-                f.write("[[characters]]\n")
-                writeSection(f, char, self.characterValidKeys)
-                f.write("\n")
+
+        if specFilename is not None:
+            f.close()
