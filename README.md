@@ -12,7 +12,7 @@ Welcome to Capper, where caption typesetting is made easy! Here's what you can d
 See the [Usage](#usage) section for instructions on how to run the program, and the [Getting Started](#getting-started) section for a quickstart guide on making your first caption.
 
 # Usage
-If you're on Windows, download the latest release from the Releases page to get a precompiled executable. Open a terminal in the directory of the executable and run the following command.
+If you're on Windows, download the latest release from the [Releases](https://github.com/substantialpickle/Capper/releases/tag/stable) page to get a precompiled executable with some samples. It's in the zip named `capper-windows-vX.X.X.zip` under the Assets dropdown. Open a terminal in the directory of the executable and run the following command.
 ```
 Capper.exe <path/to/spec/file>
 ```
