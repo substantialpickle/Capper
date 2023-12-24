@@ -125,6 +125,8 @@ Now that we have all the files we need, the only thing left is to put them all t
 ### Running the Program
 `Capper.exe` is a console application, meaning that you have to type a command into a terminal or command prompt to run it. On Windows, the easiest way to do this is to navigate to the folder that `Capper.exe`, type `cmd` in the path bar, and press enter.
 
+![cmd-example](./samples/cmd-example.jpg)
+
 In the terminal, copy in the following command and press enter.
 ```
 C:\...\Capper> Capper.exe spec.toml -o
