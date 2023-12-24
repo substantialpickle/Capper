@@ -1,1 +1,5 @@
 *~
+build/
+capper/__pycache__/
+caption.spec
+dist/
