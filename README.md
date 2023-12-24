@@ -51,7 +51,7 @@ There are at least four sections you need to define for a valid specification: `
 In `spec.toml`, copy in the following text.
 ```toml
 [image]
-art = "sample/img.png"
+art = "samples/getting_started/img.jpg"
 bg_color = "#54130C"
 ```
 Text in square braces defines a new section. Here, we're defining a new section named `image`. In it, we have two keys-value pairs: `art` and `bg_color`.
@@ -77,8 +77,11 @@ In `spec.toml`, copy in the following text, and make a new folder called `output
 [output]
 base_filename = "test"
 output_directory = "outputs"
+outputs = ["caption", "autospec"]
 ```
 `base_filename` is the text that every filename the program generates will be prefixed with. For example, running the program with this specification will generate an image named `test_cap.png`. `output_directory` is the directory that all generated files will be placed in.
+
+`outputs` is set to a list that specifies what files should be generated when the program finishes. `"caption"` indicates that we want to generate an image that contains our formatted text combined with the art. `"autospec"` is explained in the later section [Looking at the Outputs](#looking-at-the-outputs).
 
 ### The `[[characters]]` Section(s)
 In `spec.toml`, copy in the following text.
@@ -87,13 +90,12 @@ In `spec.toml`, copy in the following text.
 name = "serif"
 color = "#F0C7C2"
 font = "fonts/Noto_Serif/NotoSerif-Regular.ttf"
-font_bold = "fonts/Noto_Serif/NotoSerif-Bold.ttf"
-font_italic = "fonts/Noto_Serif/NotoSerif-Italic.ttf"
-font_bolditalic = "fonts/Noto_Serif/NotoSerif-BoldItalic.ttf"
 ```
-This section is used to define the "characters" of your story. More literally, they define how certain groups of text should be formatted, and what tag (or "name") those groups should be identified with, and what main/bold/italic fonts to use. The way we access these "characters" in the text will be covered in the next section.
+This section is used to define the "characters" of your story. More literally, they define how certain groups of text should be formatted, what tag (or "name") those groups should be identified with, and what font to use. The way we access these "characters" in the text will be covered in the next section.
 
-Note the double square braces (`[[]]`) that surround the header name. The `character` header is special since we want more than one of them; the double square braces is what lets us do that in `toml`. In fact, let's try it out. Copy in the following text and save the file.
+Note how we didn't specify a bold or italic font. These get autoselected by the program based on the filename of other fonts in the `fonts/Noto_Serif/` directory.
+
+Also note the double square braces (`[[]]`) that surround the header name. The `character` header is special since we want more than one of them; the double square braces is what lets us do that in `toml`. In fact, let's try it out. Copy in the following text and save the file.
 
 ```toml
 [[characters]]
@@ -107,7 +109,7 @@ name = "em"
 color = "#FFFFFF"
 font = "fonts/Noto_Emoji/NotoEmoji-Regular.ttf"
 ```
-There are many more options you can play with, which I cover briefly towards the end of this guide and in more detail on the wiki. But for now, this is all you need for a specification!
+There are many more options you can play with, which I cover briefly towards the end of this guide and in more detail on the [wiki](https://github.com/substantialpickle/Capper/wiki/Specification-Guide). But for now, this is all you need for a specification!
 
 ## The Text File
 This file is where the main text of your caption lives, plus some minimal formatting to access the "characters" we defined earlier.
@@ -141,7 +143,12 @@ These new lines are comments that contain automatically selected values for the 
 
 In general, the automatic values produce a fairly decent output, but sometimes, you may want to tune up some of them to your liking. Perhaps the line spacing needs to be a little larger, or maybe the image should be a bit taller. This file gives you an easy way to modify those number, either by uncommenting lines from the `autospec`, or copying them into your original specification.
 
-Play around with these however you'd like! Read the wiki for what the allowed values are, what they mean, and which ones are required.
+Play around with these however you'd like! Read the [wiki](https://github.com/substantialpickle/Capper/wiki/Specification-Guide) for what the allowed values are, what they mean, and which ones are required.
+
+If you want to access the values in the autospec, but don't want to deal with extra files being generated, you can have them outputted directory on the terminal by passing the `-s` option to the program.
+```
+C:\...\Capper> Capper.exe <path/to/specifcation/file> -s
+```
 
 ### Transparent Backgrounds
 Transparent background are supported for writers that want to do post-processing after generating their caption, such as adding their own background or applying a drop shadow on their text.
@@ -163,6 +170,6 @@ outputs = "parts"
 ## Closing Notes
 That's all! I really hope you find this program useful. It's something that I started on a whim and have put a lot of hours into. I have a good amount of experience typesetting captions manually, and I've done my best to capture all the things I've learned intuitively into this program into something that's (hopefully...) easy to use.
 
-Along with the wiki for the `.toml` specification, I've also written some tips and tricks that I've picked up while "playtesting".
+Along with the [wiki](https://github.com/substantialpickle/Capper/wiki/Specification-Guide) for the `.toml` specification, I've also written some [tips and tricks](https://github.com/substantialpickle/Capper/wiki/Tips-and-Tricks) that I've picked up while "playtesting".
 
 If you find any problem with any part of this project, please leave an "Issue" on the GitHub page or message me on Discord at "substantialpickle". This is an alternate account, so please be patient if I don't reply immediately!

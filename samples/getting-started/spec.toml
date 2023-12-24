@@ -31,3 +31,9 @@ font = "fonts/Noto_Sans/NotoSans-Regular.ttf"
 name = "em"
 color = "#FFFFFF"
 font = "fonts/Noto_Emoji/NotoEmoji-Regular.ttf"
+
+[[characters]]
+name = "credits"
+color = "#54130C"
+relative_height = 0.7
+font = "fonts/Noto_Sans/NotoSans-Regular.ttf"
