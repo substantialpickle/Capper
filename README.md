@@ -1,4 +1,7 @@
 # Introducing Capper!
+
+![The Monkey's Paw, Part 3](./samples/banner/paw_cap.png)
+
 Welcome to Capper, where caption typesetting is made easy! Here's what you can do with this program:
 
 * Automatically size and fit your text to an image based on its length.
@@ -137,6 +140,9 @@ C:\...\Capper> Capper.exe <path/to/specifcation/file> -o
 The `-o` at the end tells the program to open the caption with your default image viewer after it's generated.
 
 ### Looking at the Outputs
+
+![getting-started Example Caption](./samples/getting-started/test_cap.png)
+
 In the folder named `outputs` you made earlier, you should find two new files. One is named `test_cap.png`, which contains your generated caption. Another is named `test_autospec.toml`, which is a specification similar to one we put together originally, but with a lot of extra lines starting with the `#` symbol.
 
 These new lines are comments that contain automatically selected values for the keys you didn't specify.
@@ -145,7 +151,7 @@ In general, the automatic values produce a fairly decent output, but sometimes, 
 
 Play around with these however you'd like! Read the [wiki](https://github.com/substantialpickle/Capper/wiki/Specification-Guide) for what the allowed values are, what they mean, and which ones are required.
 
-If you want to access the values in the autospec, but don't want to deal with extra files being generated, you can have them outputted directory on the terminal by passing the `-s` option to the program.
+If you want to access the values in the autospec, but don't want to deal with extra files being generated, you can have them outputted directly on the terminal by passing the `-s` option to the program.
 ```
 C:\...\Capper> Capper.exe <path/to/specifcation/file> -s
 ```

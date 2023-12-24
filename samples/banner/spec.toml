@@ -1,0 +1,49 @@
+[image]
+art = "samples/banner/monkeys-paw.png"
+bg_color = "#121617"
+image_height = 2000
+
+[text]
+text = "samples/banner/monkeys-paw.txt"
+text_box_pos = "split"
+padding = 1.25
+
+# Story: https://www.gutenberg.org/cache/epub/12122/pg12122-images.html
+# Art: https://www.artstation.com/artwork/8lkeJE
+credits = [
+	"The Monkey's Paw, Part 3",
+	"Written by W. W. Jacobs",
+	"Art by Gaelle DUMAS"
+]
+
+[output]
+base_filename = "paw"
+output_directory = "samples/banner"
+outputs = ["caption"]
+
+[[characters]]
+name = "b"  # base
+color = "#fff9e6"
+stroke_width = 0.1
+stroke_color = "#000000"
+font = "fonts/Noto_Sans/NotoSans-Regular.ttf"
+
+[[characters]]
+name = "m"  # man
+color = "#cea8a8"
+stroke_width = 0.1
+stroke_color = "#000000"
+font = "fonts/Noto_Sans/NotoSans-Regular.ttf"
+
+[[characters]]
+name = "w"  # woman
+color = "#c1a8ce"
+stroke_width = 0.1
+stroke_color = "#000000"
+font = "fonts/Noto_Sans/NotoSans-Regular.ttf"
+
+[[characters]]
+name = "credits"
+color = "#3b4146"
+relative_height = 0.75
+font = "fonts/Noto_Sans/NotoSans-Regular.ttf"
