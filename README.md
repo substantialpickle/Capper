@@ -114,7 +114,7 @@ There are many more options you can play with, which I cover briefly towards the
 ## The Text File
 This file is where the main text of your caption lives, plus some minimal formatting to access the "characters" we defined earlier.
 
-I've written up a sample text file that explains the markup format and some of it's quirks. Read the file `samples/getting-starting/text.txt` (from the download or via GitHub).
+I've written up a sample text file that explains the markup format and some of it's quirks. Read the file `samples/getting-starting/text.txt` (from the download or [via GitHub](https://github.com/substantialpickle/Capper/blob/main/samples/getting-started/text.txt)).
 
 ## Putting it All Together
 Now that we have all the files we need, the only thing left is to put them all together with the executable. This guide assumes you're using the Windows `.exe` from the Releases section. If you want to run the program with a Python interpreter, replace `Capper.exe` with `python capper/caption.py` in the sample commands.
@@ -160,11 +160,11 @@ The background color in the specification file may be in either the RGB or RGBA 
 bg_color = "#00000000"
 ```
 
-When doing custom work like this, it may be convenient to get the rendered text as a separate file from the combined caption. Specify `parts` under `[output]` to do this.
+When doing custom work like this, it may be convenient to get the rendered text as a separate file from the combined caption. Specify `text` under `[output]` to do this.
 ```toml
 [output]
 # ...
-outputs = "parts"
+outputs = ["text"]
 ```
 
 ## Closing Notes
