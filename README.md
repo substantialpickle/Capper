@@ -54,7 +54,7 @@ There are at least four sections you need to define for a valid specification: `
 In `spec.toml`, copy in the following text.
 ```toml
 [image]
-art = "samples/getting_started/img.jpg"
+art = "samples/getting-started/img.jpg"
 bg_color = "#54130C"
 ```
 Text in square braces defines a new section. Here, we're defining a new section named `image`. In it, we have two keys-value pairs: `art` and `bg_color`.
@@ -67,7 +67,7 @@ Note the quotes in between the values of each key-value pair. In valid `.toml` f
 In `spec.toml`, copy in the following text.
 ```toml
 [text]
-text = "samples/getting-starting/text.txt"
+text = "samples/getting-started/text.txt"
 text_box_pos = "split"
 ```
 `text` is set to the path of the text file we want to use for our caption. We'll go over how exactly this is formatted later.  Be sure to replace the path with the one for your actual text file if you choose to follow along manually.
@@ -123,7 +123,7 @@ I've written up a sample text file that explains the markup format and some of i
 Now that we have all the files we need, the only thing left is to put them all together with the executable. This guide assumes you're using the Windows `.exe` from the Releases section. If you want to run the program with a Python interpreter, replace `Capper.exe` with `python capper/caption.py` in the sample commands.
 
 ### Running the Program
-`Capper.exe` is a console application, meaning that you have to type a command into a terminal or command prompt to run it. On Windows, the easiest way to do this is to navigate to the folder that `Capper.exe`, type `cmd` in the path bar, and press enter.
+`Capper.exe` is a console application, meaning that you have to type a command into a terminal or command prompt to run it. On Windows, the easiest way to do this is to navigate to the folder with `Capper.exe`, type `cmd` in the path bar, and press enter.
 
 ![cmd-example](./samples/cmd-example.jpg)
 
