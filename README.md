@@ -46,7 +46,7 @@ This guide will give you a basic overview of how to write a simple specification
 ## The Specification
 The `.toml` file serves as the glue that binds all elements of your caption. It tells the program where to locate the art, text, and fonts for your caption. It also defines details like text color, placement, line spacing, and more. This section will guide you through assembling a "bare-minimum" specification to help you get started.
 
-Create and open a new file named `spec.toml` in the same folder as the executable, or reference the file in `samples/getting-starting/spec.toml`.
+Create and open a new file named `spec.toml` in the same folder as the executable, or reference the file in `samples/getting-started/spec.toml`.
 
 There are at least four sections you need to define for a valid specification: `[image]`, `[text]`,  `[output]`,  and one or more `[[characters]]`.
 
@@ -117,7 +117,7 @@ There are many more options you can play with, which I cover briefly towards the
 ## The Text File
 This file is where the main text of your caption lives, plus some minimal formatting to access the "characters" we defined earlier.
 
-I've written up a sample text file that explains the markup format and some of it's quirks. Read the file `samples/getting-starting/text.txt` (from the download or [via GitHub](https://github.com/substantialpickle/Capper/blob/main/samples/getting-started/text.txt)).
+I've written up a sample text file that explains the markup format and some of it's quirks. Read the file `samples/getting-started/text.txt` (from the download or [via GitHub](https://github.com/substantialpickle/Capper/blob/main/samples/getting-started/text.txt)).
 
 ## Putting it All Together
 Now that we have all the files we need, the only thing left is to put them all together with the executable. This guide assumes you're using the Windows `.exe` from the Releases section. If you want to run the program with a Python interpreter, replace `Capper.exe` with `python capper/caption.py` in the sample commands.
@@ -133,7 +133,7 @@ C:\...\Capper> Capper.exe spec.toml -o
 ```
 Or if you want to use the provided sample directly, do:
 ```
-C:\...\Capper> Capper.exe samples/getting-starting/spec.toml -o
+C:\...\Capper> Capper.exe samples/getting-started/spec.toml -o
 ```
 In general, the form of the command is:
 ```
