@@ -11,7 +11,7 @@ Welcome to Capper, where caption typesetting is made easy! Here's what you can d
 
 See the [Usage](#usage) section for instructions on how to run the program, and the [Getting Started](#getting-started) section for a quickstart guide on making your first caption.
 
-### Also check out [CapperGUI](https://github.com/synchroslap/CapperGUI) by synchroslap!
+## Also check out [CapperGUI](https://github.com/synchroslap/CapperGUI) by synchroslap!
 Capper is a terminal based application, making it potentially difficult to operate for some users. CapperGUI wraps a graphical interface around Capper for ease of use.
 
 # Usage
