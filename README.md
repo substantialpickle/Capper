@@ -12,7 +12,7 @@ Welcome to Capper, where caption typesetting is made easy! Here's what you can d
 See the [Usage](#usage) section for instructions on how to run the program, and the [Getting Started](#getting-started) section for a quickstart guide on making your first caption.
 
 ## Also check out [CapperWeb](https://synchroslap.github.io/CapperWeb/) by synchroslap!
-Capper is a terminal based application, making it potentially difficult to operate for some users. CapperWeb provides a web interface for Capper for ease of use. Alternatively, [CapperGUI](https://github.com/synchroslap/CapperGUI) is a Windows based application also by synchroslap which works similarly.
+Capper is a terminal based application, making it potentially difficult to operate for some users. CapperWeb provides a web interface for Capper for ease of use. Alternatively, [CapperGUI](https://github.com/synchroslap/CapperGUI) is a standalone Windows application also by synchroslap.
 
 # Usage
 If you're on Windows, download the latest release from the [Releases](https://github.com/substantialpickle/Capper/releases/tag/stable) page to get a precompiled executable with some samples. It's in the zip named `capper-windows-vX.X.X.zip` under the Assets dropdown. Open a terminal in the directory of the executable and run the following command.
